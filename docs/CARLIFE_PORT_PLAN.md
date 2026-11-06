@@ -284,6 +284,44 @@ TouchRouter → CarLifeTouchSink → CarLifeHuClient.sendTouchAction(...)
 
 ---
 
+### 5.4 复用边界：不是从零重写，也不是整体搬插桩
+
+新工程**不会直接运行**旧 hybrid63 的 smali/注入补丁；也不是让新窗口重新发明 CarLife 协议。
+
+正确的做法是：
+
+**直接复用/适配（旧工程已经验证过的逻辑）**
+
+- `CarLifeHuClient` 的 CarLife TCP/协议/握手；
+- `CarLifeProtocol` 的消息 ID/TLV/98311/98386；
+- `H264Sps`、视频解码器、GOP/CSD 缓存；
+- CarLife 媒体/TTS PCM 的 ring、1408B packetizer、44.1k 相位；
+- `CarLifeNav` 的 0x10030 → 0x5201/0x5202；
+- `CarLifeNavAmap` 的 AMap AIDL；
+- `CarLifeHudReceiver` 等调试入口。
+
+这些可以作为 Java 代码先放进新工程，或按 link_plus 的 Kotlin 风格逐个转写；协议细节不重新猜。
+
+**必须按 link_plus 架构重写**
+
+- `ScreenSource`/编码器 Surface 绑定；
+- 壁纸 + CarLife OES 纹理 + contain + 圆角合成；
+- `AudioSender` 的外部 PCM 入口/TTS 混音；
+- `TouchRouter` 到 CarLife 触摸通道；
+- `SessionController` 生命周期；
+- 设置页/权限/激活 UI。
+
+**不要搬**
+
+- smali 接缝（Aq/d9/eh/vm）；
+- 闭源 APK 的布局/队列补丁；
+- 旧 hybrid63 的 d9 字段/反射补丁；
+- 旧版 Activity 的 Shizuku/Root 入口。
+
+因此新窗口的第一件事是**读懂并迁移旧 Java 逻辑**，不是重新写一套 CarLife 协议；但最后跑在 link_plus 里的渲染/音频/触摸/会话层是新的源码实现。
+
+---
+
 ## 6. 阶段任务与验收
 
 ### P0 基线（1–2 天）
