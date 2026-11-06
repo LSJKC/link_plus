@@ -27,6 +27,8 @@ adbkey.pub
 embedded-adb-identity
 
 # 本机环境与运行产物
+# 现场验收日志（scripts/p1a-field-check.ps1 输出，不随仓库分发）
+field-logs/
 .env
 .env.*
 !.env.example

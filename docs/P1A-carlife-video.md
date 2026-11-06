@@ -75,6 +75,10 @@ VideoSender 编码器输入 Surface（link_plus 原有 H.264 编码 → AirPlay 
 
 - [x] `.\gradlew.bat :app:assembleBuick` 构建成功（见 [P0-baseline.md](P0-baseline.md)）
 - [x] 单元测试：`CarLifeProtocol`、`H264Sps`、`CarLifeVideoPipeline` 纯 JVM 用例
+- [x] `FakeCarLifeEngineTest`（JVM 无设备集成测试）：假 CarLife 引擎真实 socket 握手 +
+  8240 收到合成 SPS/PPS/IDR 帧，验证生产 `CarLifeHuClient` 回调（详见 §7）
+- [x] 现场验收工具链就绪：`scripts/p1a-field-check.ps1` + `scripts/verify-carlife-log.ps1`
+  （自检通过，见 §6）
 - [x] 无 smali/闭源 APK 改动、无 root/Shizuku、无内置无线 ADB 激活
 - [x] 日志标记齐全（静态检查）
 
@@ -89,7 +93,104 @@ VideoSender 编码器输入 Surface（link_plus 原有 H.264 编码 → AirPlay 
 
 结果记录到 [P0-baseline.md](P0-baseline.md) 的待回填表或 `docs/logs/`。
 
-## 9. 本轮验证记录（2026-11-06，本机无设备）
+> 现场验收用 `scripts/p1a-field-check.ps1` 一条命令完成安装/启动/抓日志/标记校验，
+> 见下节「现场验收工具（P1A）」。
+
+## 6. 现场验收工具（P1A）
+
+手机 + 车机就绪后，现场验收只需 **一条命令 + 一次自动校验**。工具在 `scripts/`，
+抓取的日志落在 `field-logs/`（已加入 `.gitignore`，不随仓库分发）。
+
+### 1. 前置条件
+
+- 手机用 USB 线连接**开发机**并授权 USB 调试——仅用于**宿主电脑侧** `adb install` / `adb logcat`；
+  **本应用不内置无线 ADB 激活**，无需开发者选项/无线调试/Shizuku/root（见 [no-adb-model.md](no-adb-model.md)）。
+- 开发机有 adb：`F:\carplay\tools\android-sdk\platform-tools\adb.exe`，或
+  `$env:ANDROID_HOME\platform-tools\adb.exe`，或 PATH 上的 `adb`。
+- APK 已构建：`app\build\outputs\apk\buick\app-buick.apk`（`$env:JAVA_HOME='F:\carplay\tools\jdk17\jdk-17.0.20.1'; .\gradlew.bat :app:assembleBuick`）。
+
+### 2. 一键现场验收
+
+```powershell
+cd F:\carplay\_newproj\linkplus_carlife
+
+# 安装/覆盖安装 APK → 启动应用 → 抓 logcat → 标记校验（默认等设备 120s、抓 120s）
+pwsh -NoProfile -File scripts\p1a-field-check.ps1
+
+# 常用变体
+pwsh -NoProfile -File scripts\p1a-field-check.ps1 -DurationSec 180 -WaitDeviceSec 30
+pwsh -NoProfile -File scripts\p1a-field-check.ps1 -NoInstall
+pwsh -NoProfile -File scripts\p1a-field-check.ps1 -Apk D:\build\app-buick.apk -LogDir D:\field-logs
+```
+
+脚本依次：定位 adb → 等待已授权设备（超时给出排查步骤并以非零码退出）→ `adb install -r` →
+`adb logcat -c` → `am start -W -n io.github.shaonialife.buicklinkplus.buick/io.github.shaonialife.buicklinkplus.MainActivity` →
+打印操作步骤 → 抓 `adb logcat -v time -s CarPlaySender:V *:S` 到
+`field-logs/p1a-<时间戳>.log`（实时回显）→ 自动调用校验器并打印摘要。
+
+抓满 `-DurationSec` 秒（默认 120；`0` = 一直抓到 Ctrl+C）后停止；按 Ctrl+C 也会停止抓取并立即校验已抓内容。
+
+退出码：`0` PASS；`1` 校验 FAIL/运行错误；`2` 无设备或 adb 不可用；`3` 多设备/APK 缺失；
+`4` 安装失败；`5` 启动失败；`6` logcat 启动失败。
+
+### 3. 现场操作顺序（须在抓日志窗口内完成）
+
+1. 手机上打开「CarLife+」，点「无线连接」；
+2. 回到本应用（Buick Link＋），按正常流程连接车机；
+3. 保持 1–2 分钟：车机出现 CarLife 画面，操作 CarLife 内切歌/导航画面应刷新；期间不要锁屏/退出应用。
+
+### 4. 期望日志顺序（`CarPlaySender` 标签）
+
+```text
+MODE: CarLife 唯一内容源 已启动（等待 CarLife+ 进入无线连接）
+CARLIFE: carlife connected 127.0.0.1（握手成功，等待视频帧）
+CARLIFE-VIDEO: 码流真实尺寸 1280x720（编码器 1920x1080）
+CARLIFE-VIDEO: 解码器已启动 stream=1280x720 encoder=1920x1080 …
+CARLIFE-VIDEO: fit stream=1280x720 encoder=1920x1080 scale=…（尺寸不一致时的拉伸提示）
+CARLIFE-VIDEO: decoder out #1 pts=…（之后每 150 帧一行）
+VIDEO: 帧 #1 … 已发送（之后每帧一行）
+```
+
+必需标记（区分大小写子串，全部出现才 PASS）：
+
+| 必需标记 | 含义 |
+| --- | --- |
+| `MODE: CarLife` | 本轮会话画面来源已切换为 CarLife |
+| `CARLIFE: carlife connected` | 已连上本机 CarLife+ 引擎并握手成功 |
+| `CARLIFE-VIDEO: decoder out` | MediaCodec 解码器开始输出帧 |
+| `VIDEO: 帧` | 编码帧已写入 AirPlay 车机流 |
+
+建议标记（仅提示，不影响判定）：`CARLIFE-VIDEO: fit`、`CARLIFE: …重连/断开`、`AIRPLAY: `。
+
+失败标记（命中即 FAIL）：`VIDEO: 编码器取帧异常`、`CARLIFE-VIDEO: 解码器错误`、
+`解码线程异常退出`、`重建解码器仍失败`。
+
+### 5. 只校验已有日志 / 工具自检
+
+```powershell
+# 校验任意一份抓取文件（逐项表格 + 行号；PASS 退出 0 / FAIL 退出 1）
+pwsh -NoProfile -File scripts\verify-carlife-log.ps1 -Path field-logs\p1a-20261106-210000.log
+
+# 机器可读 JSON（含逐项明细、行号、退出码）
+pwsh -NoProfile -File scripts\verify-carlife-log.ps1 -Path field-logs\p1a-20261106-210000.log -Json
+
+# 工具自检：合成「好日志 / 缺必需标记 / 含失败标记」三份日志，应分别 PASS / FAIL / FAIL
+pwsh -NoProfile -File scripts\verify-carlife-log.ps1 -SelfTest
+```
+
+`-Json` 顶层字段：`Path`、`LineCount`、`Result`（PASS/FAIL）、`ExitCode`、`Required[]`、
+`Advisory[]`、`Failure[]`、`Summary`。
+
+### 6. 限制
+
+- logcat 只抓 `CarPlaySender` 标签，且只覆盖脚本启动之后的事件；先操作再启动会漏标记（脚本启动时会 `logcat -c` 清空缓冲）。
+- 手机厂商 ROM 可能要求「USB 安装」授权或解锁屏幕；`am start` 失败时可按提示手动打开应用后用 `-NoInstall` 重跑。
+- 校验器只证明「应用侧日志标记齐全」（视频链路已打通）；车机画面是否真的正常仍需人工确认。
+  尺寸不一致/拉伸风险看 `CARLIFE-VIDEO: fit`，由 P1B 合成器解决。
+- 无设备/无车机时无法自动验证安装、启动、抓取这三段路径；请先跑 `-SelfTest` 与
+  `pwsh -NoProfile -File scripts\p1a-field-check.ps1 -WaitDeviceSec 2`（应给出明确无设备提示并非零退出）确认工具本身正常。
+
+## 7. 本轮验证记录（2026-11-06，本机无设备）
 
 环境：JDK 17.0.20.1（`F:\carplay\tools\jdk17\jdk-17.0.20.1`），Android SDK 34 / Build Tools 35.0.0 / NDK 27.0.12077973，
 分支 `carlife-port`，版本 `0.1.0 (153)`。
@@ -97,16 +198,24 @@ VideoSender 编码器输入 Surface（link_plus 原有 H.264 编码 → AirPlay 
 | 检查项 | 命令 | 结果 |
 | --- | --- | --- |
 | 代码格式 | `.\gradlew.bat spotlessCheck` | BUILD SUCCESSFUL（ktlint 1.3.1，全部 Kotlin） |
-| 单元测试 | `.\gradlew.bat :app:testBuickUnitTest` | 120 个测试类 / 618 个用例，0 failure / 0 error；其中 CarLife 相关 33 项全通过 |
-| 构建 | `.\gradlew.bat :app:assembleBuick` | BUILD SUCCESSFUL（1m28s，含 lintVital） |
+| 单元测试 | `.\gradlew.bat :app:testBuickUnitTest` | 121 个测试类 / 619 个用例，0 failure / 0 error / 0 skipped；其中 CarLife 相关 34 项全通过 |
+| 构建 | `.\gradlew.bat :app:assembleBuick` | BUILD SUCCESSFUL（含 lintVital） |
 | Lint | `.\gradlew.bat :app:lintBuick :app:lintDebug` | BUILD SUCCESSFUL（warningsAsErrors 全绿） |
-| 产物 | `app/build/outputs/apk/buick/app-buick.apk` | 26,894,933 B，SHA-256 `EB68FF5B6AA5B0B68681C205D8383A1C06079B8B4CB18DFE9C7B63CC17198F3E`；versionCode=153 / versionName=0.1.0（debug/buick 签名，重新构建时 hash 会变化） |
+| 产物 | `app/build/outputs/apk/buick/app-buick.apk` | 26,894,933 B（版本 0.1.0/153；debug/buick 签名，重新构建时 hash 会变化，以当次构建输出为准） |
 | 实车/真机 | — | **PENDING**：`adb devices` 无设备，安装/连接/画面/音频/触摸验收待接手机+车机后执行 |
 
 CarLife 相关单测明细：`CarLifeProtocolTouchTest` 4、`CarLifeCarGpsTest` 6、`InitOrderTest` 3、
-`ConnectTypeProbeTest` 3、`H264SpsTest` 8、`CarLifeVideoPipelineTest` 9。
+`ConnectTypeProbeTest` 3、`H264SpsTest` 8、`CarLifeVideoPipelineTest` 9、`FakeCarLifeEngineTest` 1。
 
-## 6. 风险与回滚
+`FakeCarLifeEngineTest`（本轮新增，JVM 无设备集成测试）证据：假 CarLife 引擎在 127.0.0.1 监听
+7240/8240/9340/9240/9241/9242/9440，与生产 `CarLifeHuClient` 走真实 socket；命令序列
+`98305 → 98343 → 98307 → 98344 → 98386 → 98311 → 98313`，98311 申请 `1280x720@20`、65544 原样确认；
+8240 收到 IDR（`keyFrame=true, pts=1234567`）与 P 帧（`keyFrame=false, pts=1234607`）两帧，
+SPS 解析 `onStreamSize(1280,720)`、帧负载与假引擎写入逐字节一致；`client.stop()` 后 `isRunning=false`。
+覆盖「引擎连接 + 码流接收」到 `CarLifeVideoDecoder` 之前的下层路径；MediaCodec/Surface 解码与车机侧
+AirPlay 链路仍需真机验收。
+
+## 8. 风险与回滚
 
 | 风险 | 处理 |
 | --- | --- |
@@ -116,14 +225,14 @@ CarLife 相关单测明细：`CarLifeProtocolTouchTest` 4、`CarLifeCarGpsTest` 
 | 直接解码→编码 Surface 在部分 ROM 不支持 | 回退方案：解码到 SurfaceTexture + GL 合成到编码器 Surface（P1B 实现） |
 | 本阶段无回滚开关 | 画面唯一来源即 CarLife；旧「隐形屏」路径已按用户要求随内置 ADB 一并移除，无法回退到 shell 桌面 |
 
-## 7. 后续阶段
+## 9. 后续阶段
 
 - **P1B**：`CarLifeComposer`（EGL + OES 纹理 + 壁纸 + contain + 圆角），解决尺寸不一致/拉伸。
 - **P2**：CarLife 9240/9241 PCM → `AudioSender.feedExternalPcm`（48k stereo / 1408B / TTS ring）。
 - **P3**：车机触摸 → `CarLifeTouchSink` → CarLife 9340；按 P1B pane 映射坐标。
 - **P4**：0x10030 → iAP2 0x5201/0x5202 导航上行；设置/日志导出。
 
-## 8. 许可
+## 10. 许可
 
 CarLife 协议/客户端/视频处理移植自 [CarPToCarL](https://github.com/jjuugk/CarPToCarL)（MIT，Copyright (c) 2026 lizhihua），
 归属与修改说明见 [third-party/CarPToCarL-NOTICE.md](third-party/CarPToCarL-NOTICE.md)。
