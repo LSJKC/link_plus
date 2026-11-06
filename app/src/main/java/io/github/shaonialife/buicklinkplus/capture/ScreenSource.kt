@@ -3,7 +3,7 @@ package io.github.shaonialife.buicklinkplus.capture
 import android.view.Surface
 import io.github.shaonialife.buicklinkplus.render.DisplayGeometry
 
-/** 画面来源接口，负责向编码器 Surface 绘制；当前实现为 [HiddenDisplaySource] */
+/** 画面来源接口，负责向编码器 Surface 绘制；唯一实现为 [CarLifeScreenSource] */
 interface ScreenSource {
     val name: String
 
