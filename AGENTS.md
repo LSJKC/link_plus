@@ -4,9 +4,10 @@
 
 开始任何实现前，必须先读：
 
-1. `docs/CARLIFE_PORT_PLAN.md`（目标、架构、阶段、验收、旧工程踩坑）
-2. `README.md` / `docs/architecture.md`（上游结构）
-3. 旧工程只读参考：`F:\carplay\_newproj\hybrid63\inject\src`
+1. `docs/CARLIFE_PORT_PLAN.md`（目标、架构、阶段、验收、旧工程踩坑、最新源码快照、环境要求）
+2. `reference/README.md`（CarPToCarL/carvex 最新快照）
+3. `README.md` / `docs/architecture.md`（上游结构）
+4. 旧工程只读参考：`F:\carplay\_newproj\hybrid63\inject\src`
 
 硬约束：
 
@@ -25,8 +26,19 @@
 P0 基线 → P1A CarLife H.264 直出到 VideoSender Surface
 ```
 
+开工前：
+
+```powershell
+cd F:\carplay\_newproj\linkplus_carlife
+$env:HTTP_PROXY='http://127.0.0.1:7890'
+$env:HTTPS_PROXY='http://127.0.0.1:7890'
+$env:JAVA_HOME='F:\carplay\tools\jdk17\jdk-17.0.20.1'
+.\scripts\check-env.ps1
+.\gradlew.bat :app:assembleBuick
+```
+
 提交前确认：
 
 ```powershell
-./gradlew.bat :app:assembleBuick
+.\gradlew.bat :app:assembleBuick
 ```

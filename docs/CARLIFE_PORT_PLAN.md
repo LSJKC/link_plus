@@ -570,6 +570,219 @@ app/src/main/java/io/github/shaonialife/buicklinkplus/video/VideoSender.kt
 
 ---
 
+## 13. 最新源码快照与更新方式
+
+新窗口开始前，先拉最新源码，不要直接拿旧的本地副本开工。
+
+### 13.1 工作副本与参考仓库
+
+| 用途 | 路径 | 当前快照 |
+|---|---|---|
+| 工作基线（link_plus） | `F:\carplay\_newproj\linkplus_carlife` | `51fb394` |
+| CarLife 主实现参考（CarPToCarL） | `reference/CarPToCarL` | `7b729fb`（2026-11-06） |
+| iAP2/音频参考（carvex-android） | `reference/carvex-android` | `aa7b750` |
+| 协议研究（carvex-carplay-research） | `reference/carvex-carplay-research` | `60dd4fc` |
+| 旧插桩工程（只读） | `F:\carplay\_newproj\hybrid63` | UI37 候选 |
+
+`reference/` 已被 `.gitignore` 排除，不提交。
+
+### 13.2 更新命令
+
+网络必须走系统代理 `127.0.0.1:7890`。
+
+```powershell
+$env:HTTP_PROXY='http://127.0.0.1:7890'
+$env:HTTPS_PROXY='http://127.0.0.1:7890'
+
+# 工作基线
+git fetch origin
+git log -1 --format='%H %ad %s' --date=iso
+
+# CarLife 参考
+git -C reference/CarPToCarL fetch --depth 1 origin
+git -C reference/CarPToCarL log -1 --format='%H %ad %s' --date=iso
+
+# iAP2/协议参考
+git -C reference/carvex-android fetch --depth 1 origin
+git -C reference/carvex-carplay-research fetch --depth 1 origin
+```
+
+如果 `reference/` 不存在：
+
+```powershell
+mkdir reference
+git clone --depth 1 https://github.com/jjuugk/CarPToCarL.git reference/CarPToCarL
+git clone --depth 1 https://github.com/iamr0s/carvex-android.git reference/carvex-android
+git clone --depth 1 https://github.com/iamr0s/carvex-carplay-research.git reference/carvex-carplay-research
+```
+
+### 13.3 为什么参考 CarPToCarL
+
+CarPToCarL 是当前 CarLife 侧最完整的参考，重点看：
+
+```text
+CarLifeHuClient.kt / CarLifeAudioSink.kt / CarLifeProtocol.kt
+Iap2NowPlaying.kt / SessionController.kt
+CarLife 音频档位、TTS、0x10035 媒体解析、98311/98386
+```
+
+注意：
+
+- 它的 `Iap2NowPlaying.kt` 曾把 album 发到 26，不能照抄；album 应为 6；
+- 它没有封面 file-transfer 完整发送端；
+- 它的歌词说法不可靠：官方 iAP2 0x5001 无歌词字段；
+- 它的连接/音频修复是最新参考，但不是无 bug 标准答案。
+
+---
+
+## 14. 环境要求（新窗口必须先过这一节）
+
+### 14.1 主机
+
+- Windows 10/11 x64；
+- PowerShell 7（`pwsh`）；
+- 磁盘 ≥ 10GB（Gradle、Kotlin、NDK、构建缓存）；
+- 可访问 GitHub / Google Maven / Maven Central / JitPack，系统代理 `127.0.0.1:7890`。
+
+### 14.2 JDK
+
+link_plus 的 AGP/Kotlin 目标是 Java 17。
+
+本机路径：
+
+```text
+F:\carplay\tools\jdk17\jdk-17.0.20.1
+```
+
+设置：
+
+```powershell
+$env:JAVA_HOME='F:\carplay\tools\jdk17\jdk-17.0.20.1'
+$env:Path = "$env:JAVA_HOME\bin;$env:Path"
+java -version
+```
+
+不要用 JDK21 代替；旧插桩工程用 JDK21，但 link_plus 构建用 JDK17。
+
+### 14.3 Android SDK
+
+本机路径：
+
+```text
+F:\carplay\tools\android-sdk
+```
+
+link_plus 固定要求：
+
+```text
+compileSdk = 34
+build-tools = 35.0.0
+ndkVersion = 27.0.12077973
+minSdk = 31
+targetSdk = 34
+```
+
+本机当前：
+
+```text
+platforms/android-34        已存在
+build-tools/34,36,37        有
+build-tools/35.0.0          缺失，需要装
+ndk/27.3.13750724           有
+ndk/27.0.12077973           缺失，需要装
+```
+
+安装：
+
+```powershell
+$env:JAVA_HOME='F:\carplay\tools\jdk17\jdk-17.0.20.1'
+& 'F:\carplay\tools\android-sdk\cmdline-tools\latest\bin\sdkmanager.bat' `
+  'platforms;android-34' 'build-tools;35.0.0' 'ndk;27.0.12077973'
+```
+
+如果 `sdkmanager` 首次运行要求接受许可，按提示输入 `y`。
+
+### 14.4 local.properties
+
+在仓库根目录创建：
+
+```properties
+sdk.dir=F\:\\carplay\\tools\\android-sdk
+```
+
+如果路径不对，以 `scripts\check-env.ps1` 的检查结果为准。
+
+### 14.5 签名
+
+首次本地构建不需要正式签名，会自动用 debug 签名。
+
+正式包再根据 `keystore.properties.example` 创建 `keystore.properties`，不要把密钥/密码提交。
+
+测试包：
+
+```powershell
+.\gradlew.bat :app:assembleBuick
+```
+
+输出：
+
+```text
+app/build/outputs/apk/buick/app-buick.apk
+```
+
+正式包应用 ID 为 `io.github.shaonialife.buicklinkplus`，buick 测试包会带 `.buick` 后缀，不能与其它签名包直接覆盖安装。
+
+### 14.6 构建版本
+
+- Gradle wrapper：8.13
+- AGP：8.13.2
+- Kotlin：2.3.21
+- ktlint/Spotless：1.3.1 / 7.2.1
+- 构建 JDK：17
+- 构建工具：Build Tools 35.0.0
+- NDK：27.0.12077973
+
+### 14.7 首次检查
+
+```powershell
+cd F:\carplay\_newproj\linkplus_carlife
+.\scripts\check-env.ps1
+.\gradlew.bat :app:assembleBuick
+```
+
+如果 Gradle 下载依赖失败，先确认代理环境变量已设置，再重试。
+
+### 14.8 设备
+
+- Android 12+ 手机；
+- USB 调试或无线调试；
+- 目标车机支持无线 CarPlay；
+- 内置无线 ADB 激活需要在开发者选项开启无线调试并按应用提示配对；
+- 测试前记录手机/ROM/车机/版本。
+
+### 14.9 第一轮禁用项
+
+- 不装 Shizuku；
+- 不使用 root；
+- 不修改闭源 APK；
+- 不在未验证时发 iAP2 file-transfer；
+- 不先做封面/歌词；先 P0+P1A。
+
+---
+
+## 15. 新窗口的第一步
+
+```powershell
+cd F:\carplay\_newproj\linkplus_carlife
+.\scripts\check-env.ps1
+git -C reference/CarPToCarL log -1 --oneline
+.\gradlew.bat :app:assembleBuick
+```
+
+先确认原版 link_plus 能构建、安装、连车机；再建 `CarLifeScreenSource`。
+
+---
+
 ## 13. 第一个 commit 建议
 
 ```text

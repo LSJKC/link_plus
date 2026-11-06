@@ -55,3 +55,7 @@ service-account*.json
 # 车型重放 fixtures（含真实地址/热点名，逐条评审后才入册）
 app/src/test/resources/carplay/fixtures/*.jsonl
 .workbuddy/
+
+# local reference checkouts (not part of this fork)
+reference/
+
