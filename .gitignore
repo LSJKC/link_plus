@@ -61,3 +61,4 @@ app/src/test/resources/carplay/fixtures/*.jsonl
 # local reference checkouts (not part of this fork)
 reference/
 
+dist/

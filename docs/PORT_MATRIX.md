@@ -1,7 +1,7 @@
 # 功能移植矩阵（hybrid63 → 本仓库）
 
 > 分支：`carlife-port`  
-> 快照：`cb5ddc3`（2026-11-06）  
+> 快照：`7a1d81d` + v0.2.0 实车测试包（2026-11-06 深夜）  
 > 旧插桩工程：`F:\carplay\_newproj\hybrid63`（只读参考）  
 > 参考实现：[CarPToCarL](https://github.com/jjuugk/CarPToCarL) `7b729fb`（MIT，见 [third-party/CarPToCarL-NOTICE.md](third-party/CarPToCarL-NOTICE.md)）
 
@@ -17,6 +17,17 @@
 | 不移植 | 明确不做（改用原生实现或删除） |
 
 **重要口径（2026-11-06 起）**：不再按阶段做“自测/逐阶段验收”。每个功能以“逻辑正确 + 可编译打包”为完成标准；全部功能就绪后一次性出实车测试包统一验证。
+
+## 0.0 实车测试包 v0.2.0（0.2.0 / versionCode 154）
+
+**已合入本包（已编译，待实车验证）**：视频直出 + P1B 合成（壁纸 cover + 安全区 contain + 圆角）、
+音频媒体 9240（48k stereo 1408B / 44.1k 相位重采样）、TTS 9241（独立 ring + duck/mix）、
+触摸 9340（安全区 contain 映射 + 单点/滑动/双指切换）、导航 iAP2（0x10030 → CarLifeNav →
+`Iap2SenderSession` 0x5201/0x5202；AMap LinkSDK 可选源）、AirPlay 虚拟链路 0x5200 订阅注入、
+内置壁纸 9 张 + 壁纸选择、设置页收敛为六类、无内置无线 ADB 激活、APK 瘦身（26.9MB → 15.1MB）。
+
+**本包尚未包含（后续提交继续移植）**：媒体 NowPlaying 0x5001 发送（进行中）、封面 artwork
+file-transfer（进行中，测试版）、HUD 广播入口、车机语音键 → CarLife VR、车机 GPS → 0x18010。
 
 **快照说明**：本表状态按**已提交基线 `cb5ddc3`** 统计。仓库工作区存在其他并行工作流的未提交移植（见 §0.1），尚未计入状态列；合入后请更新对应行的“当前状态”与“目标源码文件”。
 

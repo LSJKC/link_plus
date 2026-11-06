@@ -8,10 +8,11 @@ plugins {
 /**
  * 版本名可以重置，版本码始终递增，保证覆盖安装
  *
- * carlife-port P1A：移除内置无线 ADB 激活 + CarLife H.264 直出，版本码递增到 153。
+ * 0.2.0 (154)：hybrid63 功能全面移植第一版实车测试包（视频/合成壁纸安全区/音频/TTS/
+ * 触摸/导航 iAP2/内置壁纸/设置收敛 + 无内置 ADB 激活 + APK 瘦身）。
  */
-val appVersionName = "0.1.0"
-val appVersionCode = 153
+val appVersionName = "0.2.0"
+val appVersionCode = 154
 
 /**
  * 从根目录的 keystore.properties 读取签名，缺少时使用 debug 签名
