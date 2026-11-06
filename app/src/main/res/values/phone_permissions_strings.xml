@@ -14,7 +14,7 @@
     <string name="phone_permissions_bluetooth">手机蓝牙</string>
     <string name="phone_permissions_bluetooth_hint">与车机配对并建立无线连接</string>
     <string name="phone_permissions_wifi">手机 Wi-Fi</string>
-    <string name="phone_permissions_wifi_hint">投屏需要开启 Wi-Fi，热点信息由车机自动提供</string>
+    <string name="phone_permissions_wifi_hint">连接车机需要开启 Wi-Fi，热点信息由车机自动提供</string>
     <string name="phone_permissions_location">位置服务</string>
     <string name="phone_permissions_location_hint">Android 12 连接本地 Wi-Fi 需要开启</string>
     <string name="phone_permissions_overlay">允许悬浮窗</string>

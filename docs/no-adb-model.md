@@ -11,7 +11,7 @@
 - ADB 配对码或应用内激活步骤；
 - Shizuku / root。
 
-安装 APK 后授予普通 Android 权限即可使用；内容源为手机 CarLife+（用户手动进入「无线连接」）。如后续需要额外内容来源，优先使用 Android 原生、无需 ADB 权限的方案（例如 `MediaProjection` 屏幕采集），不引入 ADB 权限。
+安装 APK 后授予普通 Android 权限即可使用；内容源为手机 CarLife+（用户手动进入「无线连接」）。音频默认「音质优先」走 CarLife 音源，不需要投屏授权；只有选择「兼容模式」时才需要录音 + 投屏（MediaProjection）授权。如后续需要额外内容来源，优先使用 Android 原生、无需 ADB 权限的方案，不引入 ADB 权限。
 
 ## 2. 各链路怎么走
 
@@ -46,7 +46,7 @@ link_plus 原版依赖内置 shell 的桌面类能力在本项目中不使用（
 | Wi-Fi（`NEARBY_WIFI_DEVICES`；Android 12/12L 另需定位权限） | 加入车机网络、mDNS 发现服务 | 运行时授权 |
 | 通知（`POST_NOTIFICATIONS`） | 前台服务状态与日志提示 | 运行时授权 |
 | 通知使用权（通知监听服务，特殊访问） | 媒体卡读取当前播放信息（通知兜底导航） | 在系统设置中手动开启 |
-| 录音（`RECORD_AUDIO`） | 音频采集链路（CarLife 音频走外部 PCM 时为可选回退） | 运行时授权 |
+| 录音（`RECORD_AUDIO`） | 音频「兼容模式」需要（原版 MediaProjection 采集路径）；默认「音质优先」走 CarLife 音源，不需要 | 运行时授权（仅兼容模式） |
 | 悬浮窗（`SYSTEM_ALERT_WINDOW`） | 暗幕/悬浮提示（按需） | 特殊权限，需在系统设置中手动开启 |
 | 前台服务（`FOREGROUND_SERVICE` 等） | 连接期间保活，防止被系统回收 | 随功能启用，无需单独授权 |
 | 网络（`INTERNET`/`ACCESS_NETWORK_STATE`） | 车机网络与协议通信 | 安装时授予 |

@@ -47,4 +47,4 @@ $env:JAVA_HOME='F:\carplay\tools\jdk17\jdk-17.0.20.1'
 .\gradlew.bat :app:assembleBuick
 ```
 
-实车测试与反馈：按 `docs/CARLIFE_PORT_PLAN.md` 的实车测试清单出测试包并记录结果；日志用应用内「设置 → 日志与关于 → 导出日志」导出，随手机/车机型号与复现步骤反馈。上游同步见 `docs/GITHUB_WORKFLOW.md`。
+实车测试与反馈：按 `docs/CARLIFE_PORT_PLAN.md` 的实车测试清单出测试包并记录结果；日志用应用内「设置 → 帮助与诊断」分享/保存（ZIP），随手机/车机型号与复现步骤反馈。上游同步见 `docs/GITHUB_WORKFLOW.md`。

@@ -32,8 +32,11 @@ import io.github.shaonialife.buicklinkplus.bt.BtConnectionPrefs
 import io.github.shaonialife.buicklinkplus.bt.BtProfiles
 import io.github.shaonialife.buicklinkplus.bt.BtSessionGate
 import io.github.shaonialife.buicklinkplus.bt.TargetDevicePrefs
+import io.github.shaonialife.buicklinkplus.carlife.CarLifeEngineDetector
+import io.github.shaonialife.buicklinkplus.carlife.CarLifeGpsBridge
 import io.github.shaonialife.buicklinkplus.input.TouchRouter
 import io.github.shaonialife.buicklinkplus.launcher.VirtualLauncher
+import io.github.shaonialife.buicklinkplus.launcher.settings.CarLifePrefs
 import io.github.shaonialife.buicklinkplus.launcher.settings.SettingsCategoryFragment
 import io.github.shaonialife.buicklinkplus.launcher.settings.SettingsMenus
 import io.github.shaonialife.buicklinkplus.legal.DisclaimerDialog
@@ -41,6 +44,7 @@ import io.github.shaonialife.buicklinkplus.legal.DisclaimerPrefs
 import io.github.shaonialife.buicklinkplus.legal.needsDisclaimerAtLaunch
 import io.github.shaonialife.buicklinkplus.media.NotificationAccess
 import io.github.shaonialife.buicklinkplus.phone.PhoneHomeDashboard
+import io.github.shaonialife.buicklinkplus.service.CarPlayService
 import io.github.shaonialife.buicklinkplus.session.ConnectionPreflight
 import io.github.shaonialife.buicklinkplus.session.SessionCommands
 import io.github.shaonialife.buicklinkplus.session.SessionController
@@ -48,8 +52,12 @@ import io.github.shaonialife.buicklinkplus.ui.DarkMessageDialog
 import io.github.shaonialife.buicklinkplus.ui.GlassActivity
 import io.github.shaonialife.buicklinkplus.ui.PanelWindow
 import io.github.shaonialife.buicklinkplus.ui.PhonePanelUi
+import io.github.shaonialife.buicklinkplus.ui.PhonePermissionsView
 import io.github.shaonialife.buicklinkplus.ui.PhoneSettingsView
+import io.github.shaonialife.buicklinkplus.ui.ScreenDimmer
 import io.github.shaonialife.buicklinkplus.ui.UiAppearance
+import io.github.shaonialife.buicklinkplus.ui.WallpaperActivity
+import io.github.shaonialife.buicklinkplus.ui.WallpaperStore
 import io.github.shaonialife.buicklinkplus.ui.setAppearanceBackground
 import io.github.shaonialife.buicklinkplus.ui.setAppearanceImageResource
 import io.github.shaonialife.buicklinkplus.ui.setAppearanceImageTint
@@ -143,8 +151,11 @@ class MainActivity : GlassActivity() {
     private var settingsOpenedFromHome = false
     private var homeDashboard: PhoneHomeDashboard? = null
     private var phoneSettings: PhoneSettingsView? = null
+    private var phonePermissions: PhonePermissionsView? = null
+    private var quickPermissionRequestPending = false
     private var homeHeroScroll: android.widget.ScrollView? = null
     private var phoneConnectionContent: View? = null
+    private var soundStatus: TextView? = null
     private var audioTagIconResource = 0
     private var audioTagIconColor = 0
 
@@ -159,6 +170,8 @@ class MainActivity : GlassActivity() {
             val continueStart = pendingStartAfterBtPermission.getAndSet(false)
             val reopenPicker = pendingTargetPickerAfterPermission
             pendingTargetPickerAfterPermission = false
+            pendingProjectionAfterAudioPermission = false
+            pendingStartAfterProjection.set(false)
             log("PREFLIGHT: 附近设备权限结果=$grants")
             if (grants.isNotEmpty() && grants.values.all { it }) {
                 if (reopenPicker) {
@@ -171,14 +184,88 @@ class MainActivity : GlassActivity() {
             }
         }
 
+    // 权限页的申请结果只刷新页面，不能消费连接流程的继续标志
+    private val quickPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+            quickPermissionRequestPending = false
+            if (isFinishing || isDestroyed) return@registerForActivityResult
+            phonePermissions?.refresh()
+            snack(
+                getString(
+                    if (grants.isNotEmpty() && grants.values.all { it }) {
+                        R.string.phone_permissions_granted_result
+                    } else {
+                        R.string.phone_permissions_denied_result
+                    },
+                ),
+            )
+        }
+
     /** 蓝牙权限授权后自动继续启动连接。 */
     private val pendingStartAfterBtPermission =
         java.util.concurrent.atomic
             .AtomicBoolean(false)
 
-    /** 连接前选择车机侧是否播放 CarLife 声音（开关式，记住上次选择；CarLife 音频无需额外授权） */
+    /** 兼容模式：录音授权完成后才申请投屏，避免同时弹出两种系统授权 */
+    private var pendingProjectionAfterAudioPermission = false
+
+    /** 兼容模式：投屏授权是「启动连接」的前置时置位 */
+    private val pendingStartAfterProjection =
+        java.util.concurrent.atomic
+            .AtomicBoolean(false)
+
+    private val audioPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            log("MODE: RECORD_AUDIO 授权: $granted（兼容模式音频采集需要）")
+            val resumeProjection = pendingProjectionAfterAudioPermission
+            pendingProjectionAfterAudioPermission = false
+            if (resumeProjection && granted) {
+                requestAudioProjection(pendingStartAfterProjection.get())
+            } else if (resumeProjection) {
+                val connectAfter = pendingStartAfterProjection.get()
+                pendingStartAfterProjection.set(false)
+                snack(if (connectAfter) "未授予录音权限，本次未发起连接；可改用音质优先或重新选择" else "未授予录音权限，兼容采集不可用")
+            }
+        }
+
+    /** 兼容模式：申请屏幕录制（MediaProjection）授权，成功后继续连接 */
+    private val projectionLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val data = result.data
+            if (result.resultCode != RESULT_OK || data == null) {
+                pendingStartAfterProjection.set(false)
+                log("MODE: 投屏授权被拒绝（兼容模式音频采集不可用）")
+                snack("未授予投屏授权，兼容模式无法采集声音；可改用音质优先")
+                return@registerForActivityResult
+            }
+            CarPlayService.pendingProjectionResult = result.resultCode to data
+            CarPlayService.start(this)
+            log("MODE: ✓ 投屏授权已授予（兼容模式采集，重启手机后需重新授权）")
+            Bg.run("audio-late-start") {
+                val deadline = SystemClock.uptimeMillis() + 5_000L
+                while (SystemClock.uptimeMillis() < deadline) {
+                    if (CarPlayService.mediaProjection != null) break
+                    Thread.sleep(200)
+                }
+                if (CarPlayService.mediaProjection == null) {
+                    pendingStartAfterProjection.set(false)
+                    log("MODE: 投屏 5 秒未就绪（服务异常？），兼容采集本次未启动")
+                    return@run
+                }
+                SessionController.maybeStartAudioNow(applicationContext)
+                if (pendingStartAfterProjection.compareAndSet(true, false)) {
+                    startConnectionNow()
+                }
+            }
+        }
+
+    /** 连接前选择车机侧是否播放声音：CarLife 音源默认无需授权；兼容模式需投屏授权（录屏采集）。 */
     private fun showAudioChoiceDialog() {
         val saved = getSharedPreferences("settings", Context.MODE_PRIVATE).getBoolean("carlife_audio_enabled", true)
+        val compatibility =
+            io.github.shaonialife.buicklinkplus.audio.AudioPreference
+                .read(this) ==
+                io.github.shaonialife.buicklinkplus.audio.AudioPreference.COMPATIBILITY
         val density = resources.displayMetrics.density
         val content =
             LinearLayout(this).apply {
@@ -188,14 +275,19 @@ class MainActivity : GlassActivity() {
             }
         content.addView(
             TextView(this).apply {
-                text = "车机侧播放声音（CarLife 音源）"
+                text = if (compatibility) "车机侧播放声音（兼容模式）" else "车机侧播放声音（CarLife 音源）"
                 textSize = 15f
             },
             LinearLayout.LayoutParams(-1, -2),
         )
         content.addView(
             TextView(this).apply {
-                text = "开启后 CarLife 媒体声音与导航播报从车机播放；关闭则只传画面。"
+                text =
+                    if (compatibility) {
+                        "兼容模式需要投屏授权（录屏采集）才能采集声音；确认后会按系统提示授权。"
+                    } else {
+                        "开启后 CarLife 媒体声音与导航播报从车机播放；关闭则只传画面。"
+                    }
                 textSize = 12f
             },
             LinearLayout.LayoutParams(-1, -2),
@@ -203,7 +295,7 @@ class MainActivity : GlassActivity() {
         val switch =
             androidx.appcompat.widget.SwitchCompat(this).apply {
                 isChecked = saved
-                contentDescription = "车机侧播放声音（CarLife 音源）"
+                contentDescription = "车机侧播放声音"
                 thumbDrawable = ContextCompat.getDrawable(this@MainActivity, R.drawable.sw_thumb)
                 trackDrawable = ContextCompat.getDrawable(this@MainActivity, R.drawable.sw_track)
             }
@@ -394,12 +486,54 @@ class MainActivity : GlassActivity() {
     /**
      * 记录本次连接的车机侧声音选择。
      *
-     * CarLife 音频走引擎 9240/9241 外部 PCM，无需额外授权；记录后直接进入连接流程。
+     * CarLife 音源走引擎 9240/9241 外部 PCM，无需授权；
+     * 仅音频策略为「兼容」时需要 MediaProjection（录屏采集）授权。
      */
     private fun beginWithAudio(enabled: Boolean) {
         SessionController.audioEnabledForSession = enabled
-        log("MODE: 车机侧声音${if (enabled) "开启（CarLife 音源）" else "关闭（仅画面）"}")
-        startConnectionNow()
+        SessionController.audioPreference =
+            io.github.shaonialife.buicklinkplus.audio.AudioPreference
+                .read(this)
+        val compatibility =
+            SessionController.audioPreference ==
+                io.github.shaonialife.buicklinkplus.audio.AudioPreference.COMPATIBILITY
+        log("MODE: 车机侧声音${if (enabled) "开启" else "关闭（仅画面）"}；策略=${SessionController.audioPreference.title}")
+        if (!enabled) {
+            startConnectionNow()
+            return
+        }
+        if (!compatibility) {
+            startConnectionNow()
+            return
+        }
+        if (CarPlayService.mediaProjection != null &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        ) {
+            log("MODE: 兼容模式采集授权已就绪")
+            startConnectionNow()
+            return
+        }
+        requestAudioProjection(connectAfter = true)
+    }
+
+    /** 兼容模式：依次申请录音与投屏（MediaProjection）授权，连接前授权与独立入口共用。 */
+    private fun requestAudioProjection(connectAfter: Boolean) {
+        log(if (connectAfter) "MODE: 兼容模式：申请录音与投屏授权后继续连接" else "MODE: 兼容模式：准备声音采集授权")
+        pendingStartAfterProjection.set(connectAfter)
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingProjectionAfterAudioPermission = true
+            audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+        if (CarPlayService.mediaProjection != null) {
+            pendingStartAfterProjection.set(false)
+            if (connectAfter) startConnectionNow() else snack("兼容模式采集授权已就绪")
+            return
+        }
+        val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
+        projectionLauncher.launch(manager.createScreenCaptureIntent())
     }
 
     /** 授权返回后重新检查全部准备项 */
@@ -472,7 +606,7 @@ class MainActivity : GlassActivity() {
         }
         runOnUiThread {
             if (isFinishing || isDestroyed || connectionCheckRunning || SessionController.isSessionRunning()) return@runOnUiThread
-            val preparation = ConnectionPreflight.inspect(this, requireAudio = false).beforeIdentity()
+            val preparation = ConnectionPreflight.inspect(this, SessionController.audioEnabledForSession).beforeIdentity()
             if (!preparation.ready) {
                 showConnectionPreparationProblem(preparation)
                 return@runOnUiThread
@@ -484,7 +618,7 @@ class MainActivity : GlassActivity() {
                 runOnUiThread finishPreparation@{
                     connectionCheckRunning = false
                     if (isFinishing || isDestroyed || SessionController.isSessionRunning()) return@finishPreparation
-                    val finalPreparation = ConnectionPreflight.inspect(this, requireAudio = false)
+                    val finalPreparation = ConnectionPreflight.inspect(this, SessionController.audioEnabledForSession)
                     if (!finalPreparation.ready) {
                         showConnectionPreparationProblem(finalPreparation)
                         return@finishPreparation
@@ -701,12 +835,17 @@ class MainActivity : GlassActivity() {
         btnPickTarget.setOnClickListener { showTargetPicker() }
         findViewById<TextView>(R.id.btnBtConnectionMode).setOnClickListener { showBluetoothConnectionMode() }
 
-        // 旧暗屏/常亮/车机壁纸/声音授权控件已从首页下线，统一隐藏（功能入口在设置页）
-        findViewById<View>(R.id.rowDim).visibility = View.GONE
-        findViewById<View>(R.id.btnWallpaperPick).visibility = View.GONE
-        findViewById<View>(R.id.btnWallpaperReset).visibility = View.GONE
-        findViewById<View>(R.id.switchAlwaysOn).visibility = View.GONE
-        findViewById<View>(R.id.sleepPolicyStatus).visibility = View.GONE
+        findViewById<TextView>(R.id.btnWallpaperPick).apply {
+            text = "编辑壁纸"
+            setOnClickListener { startActivity(Intent(this@MainActivity, WallpaperActivity::class.java)) }
+        }
+        findViewById<TextView>(R.id.btnWallpaperReset).setOnClickListener {
+            Bg.run("wallpaper-reset") {
+                val ok = WallpaperStore.resetToDefault(applicationContext)
+                runOnUiThread { if (!isFinishing && !isDestroyed) snack(if (ok) "已清除壁纸" else "清除失败") }
+            }
+        }
+
         // ---- 折叠卡：日志 ----
         bindExpandable(R.id.logHeader, logBody, logChevron)
 
@@ -738,18 +877,13 @@ class MainActivity : GlassActivity() {
             clipboard.setPrimaryClip(ClipData.newPlainText("Buick Link + 日志", text))
             snack("已复制 ${text.length} 字符日志")
         }
-        findViewById<ImageView>(R.id.btnExportLog).setOnClickListener { exportLogFile() }
-        // 默认导出本次启动的日志，长按导出全部日志
-        findViewById<ImageView>(R.id.btnExportLog).setOnLongClickListener {
-            exportLogFile(LogExporter.Scope.ALL)
-            true
-        }
+        findViewById<ImageView>(R.id.btnExportLog).visibility = View.GONE
 
         // 通知使用权（媒体会话枚举，音乐卡数据源）：需用户在系统设置中手动授权。
         // 幂等可重试——启动时不一定已授权（改包名、系统重置后），所以启动和连接等时机都会再试一次。
         ensureNotificationAccessAsync()
 
-        // ---- 旧二级菜单入口：CarLife 版已下线，控件保留但隐藏（设置统一走六类页面） ----
+        // ---- 车机设置（手机侧二级菜单：桌面/横屏/超采样/dock/默认地图） ----
         findViewById<LinearLayout>(R.id.btnCarSettings).setOnClickListener {
             startActivity(android.content.Intent(this, PhoneSettingsActivity::class.java))
         }
@@ -760,6 +894,286 @@ class MainActivity : GlassActivity() {
         log("Buick Link + Phase 0 就绪")
         log("真车：与车机蓝牙配对后点「启动连接」，自动请求应用专属热点；手动入网仅作兼容入口")
         log("测试台：两台手机蓝牙配对 -> 备用机跑 xcertplay 无线模式 -> 点「启动连接」等待回连")
+    }
+
+    /** 设置 → CarLife：简洁状态页（引擎/端口自检、无线连接提示、重连、日志诊断）。 */
+    private fun buildCarLifePage(body: LinearLayout) {
+        val density = resources.displayMetrics.density
+        val status =
+            TextView(this).apply {
+                textSize = 15f
+                text = "正在检测 CarLife 引擎…"
+            }
+        body.addView(status)
+        val portLine =
+            TextView(this).apply {
+                textSize = 12f
+                setAppearanceTextColor(R.color.m3_on_var)
+                setPadding(0, (4 * density).toInt(), 0, 0)
+            }
+        body.addView(portLine)
+        body.addView(
+            TextView(this).apply {
+                textSize = 12f
+                setAppearanceTextColor(R.color.m3_on_var)
+                text = "先在手机打开 CarLife+ → 无线连接，再回本应用点「启动连接」。"
+                setPadding(0, (8 * density).toInt(), 0, (10 * density).toInt())
+            },
+        )
+
+        fun refreshStatus() {
+            status.text = "正在检测 CarLife 引擎…"
+            Bg.run("carlife-page-detect") {
+                val detected =
+                    runCatching {
+                        val engineText = CarLifeEngineDetector.statusText(applicationContext)
+                        val engineLine =
+                            engineText.lineSequence().firstOrNull { it.startsWith("•") }
+                                ?: "未识别到 CarLife/车联应用"
+                        val ports = CarLifeEngineDetector.portsListening()
+                        engineLine to "${ports.count { it.second }}/${ports.size}"
+                    }.getOrDefault("CarLife 引擎检测失败" to "?/?")
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    status.text = "CarLife：" + detected.first
+                    portLine.text =
+                        "端口自检：" + detected.second + " 监听中（7240 命令 / 8240 视频 / 9240 媒体 / 9241 TTS / 9340 触摸）"
+                }
+            }
+        }
+        val actions =
+            LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, (6 * density).toInt(), 0, 0)
+            }
+
+        fun actionButton(
+            label: String,
+            onClick: () -> Unit,
+        ) {
+            actions.addView(
+                TextView(this).apply {
+                    text = label
+                    textSize = 14f
+                    setAppearanceTextColor(R.color.m3_on_surface)
+                    setAppearanceBackground(R.drawable.bg_phone_card)
+                    setPadding((14 * density).toInt(), (10 * density).toInt(), (14 * density).toInt(), (10 * density).toInt())
+                    isFocusable = true
+                    setOnClickListener { onClick() }
+                },
+                LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = (8 * density).toInt() },
+            )
+        }
+        actionButton("刷新自检") { refreshStatus() }
+        actionButton("重连") { reconnectCarLifeSession() }
+        body.addView(actions)
+        body.addView(
+            TextView(this).apply {
+                textSize = 13f
+                setAppearanceTextColor(R.color.m3_primary)
+                text = "日志诊断  ›"
+                setPadding(0, (12 * density).toInt(), 0, 0)
+                isFocusable = true
+                setOnClickListener { showCarLifeDiagnostics() }
+            },
+        )
+
+        // CarLife 增量能力开关（简洁：开关行 + 一行说明）
+        fun switchRow(
+            label: String,
+            hint: String,
+            checked: Boolean,
+            onChange: (Boolean) -> Unit,
+        ) {
+            val row =
+                LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = android.view.Gravity.CENTER_VERTICAL
+                    setAppearanceBackground(R.drawable.bg_phone_card)
+                    val pad = (14 * density).toInt()
+                    setPadding(pad, (8 * density).toInt(), pad, (8 * density).toInt())
+                }
+            val labels =
+                LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                }
+            labels.addView(
+                TextView(this).apply {
+                    text = label
+                    textSize = 14f
+                    setAppearanceTextColor(R.color.m3_on_surface)
+                },
+            )
+            labels.addView(
+                TextView(this).apply {
+                    text = hint
+                    textSize = 11f
+                    setAppearanceTextColor(R.color.m3_on_var)
+                },
+            )
+            row.addView(labels, LinearLayout.LayoutParams(0, -2, 1f))
+            val sw =
+                androidx.appcompat.widget.SwitchCompat(this).apply {
+                    isChecked = checked
+                    contentDescription = label
+                    thumbDrawable = ContextCompat.getDrawable(this@MainActivity, R.drawable.sw_thumb)
+                    trackDrawable = ContextCompat.getDrawable(this@MainActivity, R.drawable.sw_track)
+                }
+            sw.setOnCheckedChangeListener { _, value -> onChange(value) }
+            row.addView(sw, LinearLayout.LayoutParams(-2, -2))
+            body.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = (6 * density).toInt() })
+        }
+        val appContext = applicationContext
+        switchRow("TTS 导航播报", "语音播报混入车机音频", CarLifePrefs.ttsEnabled(this)) { enabled ->
+            CarLifePrefs.setTtsEnabled(appContext, enabled)
+            snack(if (enabled) "TTS 播报已开启" else "TTS 播报已关闭")
+        }
+        switchRow("导航指引上行", "导航信息同步给车机仪表", CarLifePrefs.navEnabled(this)) { enabled ->
+            CarLifePrefs.setNavEnabled(appContext, enabled)
+            snack(if (enabled) "导航指引已开启" else "导航指引已关闭")
+        }
+        switchRow("壁纸背景", "画面合成使用壁纸背景", CarLifePrefs.wallpaperEnabled(this)) { enabled ->
+            CarLifePrefs.setWallpaperEnabled(appContext, enabled)
+            snack(if (enabled) "壁纸背景已开启" else "壁纸背景已关闭")
+        }
+        switchRow("画面圆角", "画面四角圆角 ${CarLifePrefs.CORNER_RADIUS_ON}dp", CarLifePrefs.cornerEnabled(this)) { enabled ->
+            CarLifePrefs.setCornerEnabled(appContext, enabled)
+            snack(if (enabled) "画面圆角已开启" else "画面圆角已关闭")
+        }
+        switchRow("车机 GPS 转发", "手机定位回填给 CarLife", CarLifeGpsBridge.isEnabled(this)) { enabled ->
+            CarLifeGpsBridge.setEnabled(appContext, enabled)
+            snack(if (enabled) "车机 GPS 转发已开启" else "车机 GPS 转发已关闭")
+        }
+        refreshStatus()
+    }
+
+    /** 重连当前 CarLife 会话（只重启会话，不改动其它设置）。 */
+    private fun reconnectCarLifeSession() {
+        if (!SessionController.isSessionRunning()) {
+            snack("会话未运行，请先在首页点「启动连接」")
+            return
+        }
+        snack("正在断开并重连 CarLife 会话…")
+        SessionCommands.disconnect(this)
+        Bg.run("carlife-reconnect") {
+            Thread.sleep(1_500)
+            SessionController.startConnection(applicationContext)
+        }
+    }
+
+    /** 最近 CARLIFE 日志片段（紧凑弹窗，不占首页）。 */
+    private fun showCarLifeDiagnostics() {
+        val recent =
+            SessionController
+                .logText()
+                .lineSequence()
+                .filter { it.contains("CARLIFE") }
+                .toList()
+                .takeLast(15)
+                .joinToString("\n")
+                .ifBlank { "暂无 CARLIFE 日志（先启动一次连接）" }
+        DarkMessageDialog.show(
+            activity = this,
+            title = "CarLife 日志诊断",
+            message = recent,
+            actions = listOf(DarkMessageDialog.Action("关闭") {}),
+        )
+    }
+
+    /** 手填本机蓝牙地址：Honor/MagicOS 等脱敏机型无法自动解析时使用。 */
+    private fun showBluetoothMacDialog() {
+        val context = this
+        val toast: (String) -> Unit = { message -> snack(message, 4_000L) }
+        runCatching { DeviceIdentity.bluetoothMac(context, forceRetry = true) }
+        val overrideMac = if (DeviceIdentity.hasOverride(context)) DeviceIdentity.overrideBluetoothMac(context) else null
+        val cached = DeviceIdentity.cachedBluetoothMac()
+        val status =
+            when {
+                overrideMac != null -> context.getString(R.string.phone_connection_bt_mac_status_override, overrideMac)
+                cached != null -> context.getString(R.string.phone_connection_bt_mac_status_auto, cached)
+                else -> context.getString(R.string.phone_connection_bt_mac_status_missing, DeviceIdentity.PLACEHOLDER_MAC)
+            }
+        val density = resources.displayMetrics.density
+        val input =
+            android.widget.EditText(context).apply {
+                hint = context.getString(R.string.phone_connection_bt_mac_hint)
+                setText(overrideMac.orEmpty())
+                inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                keyListener =
+                    android.text.method.DigitsKeyListener
+                        .getInstance("0123456789ABCDEFabcdef:-")
+                setSingleLine()
+            }
+        val container =
+            LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                val padding = (20 * density).toInt()
+                setPadding(padding, (8 * density).toInt(), padding, 0)
+                addView(input, LinearLayout.LayoutParams(-1, -2))
+            }
+        val dialog =
+            androidx.appcompat.app.AlertDialog
+                .Builder(context)
+                .setTitle(R.string.phone_connection_bt_mac_title)
+                .setMessage(status + "\n\n" + context.getString(R.string.phone_connection_bt_mac_explain))
+                .setView(container)
+                .setPositiveButton(R.string.phone_connection_bt_mac_save, null)
+                .setNeutralButton(R.string.phone_connection_bt_mac_clear, null)
+                .setNegativeButton(R.string.phone_connection_bt_mac_cancel, null)
+                .create()
+        dialog.setOnShowListener {
+            PanelWindow.apply(dialog, context)
+            dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener {
+                val saved = DeviceIdentity.setOverride(context, input.text?.toString())
+                if (saved == null) {
+                    toast(context.getString(R.string.phone_connection_bt_mac_invalid))
+                    return@setOnClickListener
+                }
+                if (saved == DeviceIdentity.PLACEHOLDER_MAC) {
+                    toast(context.getString(R.string.phone_connection_bt_mac_cleared))
+                } else {
+                    toast(context.getString(R.string.phone_connection_bt_mac_saved, saved))
+                }
+                DeviceIdentity.bluetoothMac(context, forceRetry = true)
+                dialog.dismiss()
+            }
+            dialog.getButton(android.content.DialogInterface.BUTTON_NEUTRAL).setOnClickListener {
+                DeviceIdentity.setOverride(context, null)
+                DeviceIdentity.bluetoothMac(context, forceRetry = true)
+                toast(context.getString(R.string.phone_connection_bt_mac_cleared))
+                dialog.dismiss()
+            }
+        }
+        dialog.show()
+    }
+
+    /** 分享日志（ZIP）：只分享，不写下载目录（LogExporter.shareLastBundle）。 */
+    private fun shareLogBundle() {
+        val appContext = applicationContext
+        snack("正在准备日志包…")
+        Bg.run("log-share") {
+            val ok = runCatching { LogExporter.shareLastBundle(appContext) }.getOrDefault(false)
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    snack(if (ok) "请选择分享应用发送日志包" else "分享失败：未声明 FileProvider 或无可用分享应用", 4_000L)
+                }
+            }
+        }
+    }
+
+    /** 保存日志（ZIP）到 下载/Buick Link＋（LogExporter.saveLastBundle）。 */
+    private fun saveLogBundle() {
+        val appContext = applicationContext
+        snack("正在保存日志包…")
+        Bg.run("log-save") {
+            val ok = runCatching { LogExporter.saveLastBundle(appContext) }.getOrDefault(false)
+            val path = LogExporter.lastBundleDownloadPath()
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    snack(if (ok) "日志已保存：${path ?: "下载/Buick Link＋"}" else "保存失败，请检查存储空间", 4_000L)
+                }
+            }
+        }
     }
 
     /** 按用途将操作控件放入设置，首页展示车辆和连接操作 */
@@ -779,16 +1193,15 @@ class MainActivity : GlassActivity() {
             PhoneSettingsView(this)
                 .apply {
                     visibility = View.GONE
-                    onSectionRequested = { id ->
-                        if (id == SettingsMenus.CONNECTION) {
-                            false
-                        } else {
-                            SettingsContentActivity.start(this@MainActivity, SettingsMenus.itemOf(id))
-                            true
-                        }
+                    onSectionRequested = { category ->
+                        val panelId = if (category < 100) category else SettingsMenus.directPhonePanel(category)
+                        if (panelId != null) SettingsContentActivity.start(this@MainActivity, SettingsMenus.itemOf(panelId))
+                        panelId != null
                     }
                     onSectionShown = { id ->
+                        if (id == SettingsMenus.ABOUT) renderConsole(SessionController.logText())
                         if (id == SettingsMenus.CONNECTION) refreshConnectionSection()
+                        if (id == SettingsMenus.PERMISSIONS) phonePermissions?.refresh()
                     }
                     onBackRequested = {
                         if (settingsOpenedFromHome) {
@@ -813,7 +1226,34 @@ class MainActivity : GlassActivity() {
             target.addView(view, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = (12 * density).toInt() })
         }
 
-        // ---- 连接与设备（内嵌页）----
+        fun panel(
+            body: LinearLayout,
+            id: Int,
+        ) {
+            val item = SettingsMenus.itemOf(id)
+            val row = layoutInflater.inflate(R.layout.item_phone_category, body, false)
+            row.setAppearanceBackground(R.drawable.bg_phone_card)
+            row.findViewById<ImageView>(R.id.categoryIcon).setAppearanceImageResource(item.iconRes)
+            row.findViewById<ImageView>(R.id.categoryIcon).setAppearanceImageTint(R.color.m3_primary)
+            row.findViewById<TextView>(R.id.categoryTitle).text = if (id == SettingsMenus.DOCK) "侧栏样式" else item.title
+            row.setOnClickListener { SettingsContentActivity.start(this@MainActivity, item) }
+            body.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = (10 * density).toInt() })
+        }
+        val appearance = settings.body(SettingsMenus.APPEARANCE)
+        // 原版「车机显示」卡整卡（含壁纸入口）放进「外观与壁纸」页，首页不再显示空卡\n        move(findViewById<View>(R.id.btnWallpaperPick).parent.parent as View, appearance)
+        panel(appearance, SettingsMenus.CAR_APPEARANCE)
+        // 原版「桌面应用/超采样/横屏/侧栏/地图分屏」入口已下线：页面容器保留，但不再显示入口
+        findViewById<View>(R.id.btnCarSettings).visibility = View.GONE
+
+        val sound = settings.body(SettingsMenus.AUDIO)
+        panel(sound, SettingsMenus.AUDIO)
+        soundStatus =
+            TextView(this)
+                .apply {
+                    setAppearanceTextColor(R.color.m3_on_var)
+                    textSize = 13f
+                }.also { sound.addView(it) }
+        buildCarLifePage(settings.body(SettingsMenus.CARLIFE))
         val connection = settings.body(SettingsMenus.CONNECTION)
         val permissionRow = layoutInflater.inflate(R.layout.item_phone_category, connection, false)
         permissionRow.findViewById<TextView>(R.id.categoryTitle).text = SettingsMenus.titleOf(SettingsMenus.PERMISSIONS)
@@ -841,7 +1281,69 @@ class MainActivity : GlassActivity() {
                     expanded = false,
                 )
             }
-        val cellular = layoutInflater.inflate(R.layout.view_phone_cellular, connection, false)
+        val permissions = settings.body(SettingsMenus.PERMISSIONS)
+        // 旧控件仍挂在窗口树内，保留既有授权、状态和息屏保存回调
+        val legacyPermissions = LinearLayout(this).apply { visibility = View.GONE }
+        permissions.addView(legacyPermissions)
+        move(readyCount.parent.parent as View, legacyPermissions)
+        val phonePrefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+        phonePermissions =
+            PhonePermissionsView(this)
+                .apply {
+                    onAction = ::handlePermissionShortcut
+                    onCompatChanged = { checked ->
+                        ScreenDimmer.enabled = checked
+                        phonePrefs.edit {
+                            putBoolean("alwaysOn", checked)
+                        }
+                        refresh()
+                    }
+                }.also { permissions.addView(it, LinearLayout.LayoutParams(-1, -2)) }
+        val about = settings.body(SettingsMenus.ABOUT)
+        about.addView(
+            TextView(this).apply {
+                textSize = 12f
+                setAppearanceTextColor(R.color.m3_on_var)
+                text = "基于 link_plus 开发（MIT）；CarLife 内容源由本应用接入，无内置 ADB/root 依赖。"
+                setPadding(0, 0, 0, (12 * resources.displayMetrics.density).toInt())
+            },
+        )
+
+        fun aboutAction(
+            label: String,
+            onClick: () -> Unit,
+        ) {
+            about.addView(
+                TextView(this).apply {
+                    text = label
+                    textSize = 15f
+                    setAppearanceTextColor(R.color.m3_on_surface)
+                    setAppearanceBackground(R.drawable.bg_phone_card)
+                    val pad = (16 * density).toInt()
+                    setPadding(pad, pad, pad, pad)
+                    isFocusable = true
+                    setOnClickListener { onClick() }
+                },
+                LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = (10 * density).toInt() },
+            )
+        }
+        aboutAction("分享日志（ZIP）") { shareLogBundle() }
+        aboutAction("保存日志（ZIP）") { saveLogBundle() }
+        move(heroStats, about)
+        move(findViewById(R.id.logCard), about)
+        move(findViewById(R.id.btnDisclaimer), about)
+        homeDashboard =
+            PhoneHomeDashboard(this, detail, onOpen = { id ->
+                val panel = if (id < 100) id else SettingsMenus.directPhonePanel(id)
+                if (panel != null) {
+                    SettingsContentActivity.start(this, SettingsMenus.itemOf(panel))
+                } else {
+                    settingsOpenedFromHome = true
+                    selectPhoneTab(true)
+                    settings.showSection(id)
+                }
+            }, onTarget = ::showTargetPicker, onMac = ::showBluetoothMacDialog)
+        val cellular = layoutInflater.inflate(R.layout.view_phone_cellular, detail, false)
         // 新卡片在旧控件初始化之后创建，开关必须在布局加载后读取和绑定
         val switchCellular = cellular.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switchCellular)
         val cellularPreferences = getSharedPreferences("settings", MODE_PRIVATE)
@@ -853,39 +1355,8 @@ class MainActivity : GlassActivity() {
             log("MODE: 优先使用手机流量 ${if (checked) "开启（上网走手机流量）" else "关闭（上网走车机热点）"}")
         }
         connection.addView(cellular)
-
-        // 首页仪表卡：目标车机、快捷入口与状态
-        fun openSection(id: Int) {
-            if (id == SettingsMenus.CONNECTION) {
-                settingsOpenedFromHome = true
-                selectPhoneTab(true)
-                settings.showSection(id)
-            } else {
-                SettingsContentActivity.start(this, SettingsMenus.itemOf(id))
-            }
-        }
-        homeDashboard =
-            PhoneHomeDashboard(
-                this,
-                detail,
-                onOpen = ::openSection,
-                onTarget = ::showTargetPicker,
-            )
-
-        // 首页只保留：连接状态/连接按钮 + 目标车机 + 最近日志 + 底部设置入口。
-        // 布局文件不允许改，运行时隐藏多余卡片（连接准备、暗屏/壁纸、免责声明等）。
-        fun hideTopLevelCard(anchor: View?) {
-            val current = anchor ?: return
-            var item: View = current
-            while (item.parent is android.view.ViewGroup && item.parent !== detail) {
-                item = item.parent as View
-            }
-            if (item.parent === detail) item.visibility = View.GONE
-        }
-        hideTopLevelCard(findViewById(R.id.readyCount))
-        hideTopLevelCard(findViewById(R.id.switchAlwaysOn))
-        findViewById<View>(R.id.homeSessionNote).visibility = View.GONE
-        findViewById<View>(R.id.btnDisclaimer).visibility = View.GONE
+        move(findViewById(R.id.homeSessionNote), detail)
+        (findViewById<View>(R.id.homeSessionNote).layoutParams as LinearLayout.LayoutParams).topMargin = (12 * density).toInt()
         findViewById<View>(R.id.phoneHomeTab).setOnClickListener {
             settingsOpenedFromHome = false
             selectPhoneTab(false)
@@ -895,8 +1366,6 @@ class MainActivity : GlassActivity() {
             if (phoneSettingsVisible) settings.showIndex()
             selectPhoneTab(true)
         }
-        // link_plus 原桌面/车机设置入口已下线，旧控件保留但不再显示
-        findViewById<View>(R.id.btnCarSettings).visibility = View.GONE
         findViewById<View>(R.id.heroStats).visibility = View.GONE
     }
 
@@ -943,6 +1412,153 @@ class MainActivity : GlassActivity() {
         }
     }
 
+    /**
+     * 权限页动作与连接向导隔离，打开设置或授权后只更新准备状态
+     */
+    private fun handlePermissionShortcut(action: PhonePermissionsView.Action) {
+        if (quickPermissionRequestPending ||
+            pendingStartAfterBtPermission.get() ||
+            pendingTargetPickerAfterPermission ||
+            connectionCheckRunning
+        ) {
+            snack(getString(R.string.phone_permissions_request_pending))
+            return
+        }
+        when (action) {
+            PhonePermissionsView.Action.GUIDE ->
+                DarkMessageDialog.show(
+                    this,
+                    getString(R.string.phone_permissions_guide),
+                    getString(R.string.phone_permissions_guide_body),
+                    listOf(
+                        DarkMessageDialog.Action(getString(R.string.phone_permissions_configure_devices)) {
+                            handlePermissionShortcut(PhonePermissionsView.Action.DEVICE_PERMISSIONS)
+                        },
+                        DarkMessageDialog.Action(getString(R.string.phone_permissions_done)) {},
+                    ),
+                )
+            PhonePermissionsView.Action.DEVICE_PERMISSIONS -> {
+                val permissions = mutableListOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN)
+                if (Build.VERSION.SDK_INT >= 33) {
+                    permissions += Manifest.permission.NEARBY_WIFI_DEVICES
+                } else {
+                    // Android 12 需同时请求粗略与精确位置，精确位置用于本地 Wi-Fi 连接
+                    permissions += Manifest.permission.ACCESS_COARSE_LOCATION
+                    permissions += Manifest.permission.ACCESS_FINE_LOCATION
+                }
+                requestQuickPermissions(permissions)
+            }
+            PhonePermissionsView.Action.BLUETOOTH -> openPermissionSettings(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+            PhonePermissionsView.Action.WIFI -> openPermissionSettings(Intent(Settings.ACTION_WIFI_SETTINGS))
+            PhonePermissionsView.Action.LOCATION -> openPermissionSettings(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+            PhonePermissionsView.Action.OVERLAY ->
+                openPermissionSettings(
+                    Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, ("package:$packageName").toUri()),
+                )
+            PhonePermissionsView.Action.BATTERY -> openPermissionSettings(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            PhonePermissionsView.Action.BACKGROUND -> showBackgroundPermissionGuide()
+            PhonePermissionsView.Action.NOTIFICATIONS -> {
+                if (Build.VERSION.SDK_INT >= 33 &&
+                    ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    requestQuickPermissions(listOf(Manifest.permission.POST_NOTIFICATIONS))
+                } else {
+                    openPermissionSettings(
+                        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName),
+                    )
+                }
+            }
+            PhonePermissionsView.Action.MEDIA_ACCESS -> openPermissionSettings(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            PhonePermissionsView.Action.SIGNAL -> requestQuickPermissions(listOf(Manifest.permission.READ_PHONE_STATE))
+
+            PhonePermissionsView.Action.SLEEP_HELP -> showSleepGuidance()
+            PhonePermissionsView.Action.DIM_NOW -> ScreenDimmer.enterDimNow()
+        }
+    }
+
+    /** 只申请缺失权限，永久拒绝时打开设置，返回后不自动连接 */
+    private fun requestQuickPermissions(permissions: List<String>) {
+        val missing = permissions.filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
+        if (missing.isEmpty()) {
+            phonePermissions?.refresh()
+            snack(getString(R.string.phone_permissions_granted_result))
+            return
+        }
+        val preferences = getSharedPreferences("phone_permissions", MODE_PRIVATE)
+        if (missing.any { preferences.getBoolean("requested:$it", false) && !shouldShowRequestPermissionRationale(it) }) {
+            openPermissionSettings(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, ("package:$packageName").toUri()))
+            return
+        }
+        preferences.edit {
+            missing.forEach { putBoolean("requested:$it", true) }
+        }
+        // 精确位置申请必须与粗略位置成对提交，即使粗略位置此前已允许
+        val request =
+            if (Manifest.permission.ACCESS_FINE_LOCATION in missing) {
+                (missing + Manifest.permission.ACCESS_COARSE_LOCATION).distinct()
+            } else {
+                missing
+            }
+        quickPermissionRequestPending = true
+        runCatching { quickPermissionLauncher.launch(request.toTypedArray()) }.onFailure {
+            quickPermissionRequestPending = false
+            openPermissionSettings(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, ("package:$packageName").toUri()))
+        }
+    }
+
+    /**
+     * 系统设置始终打开在手机主屏，厂商未提供对应页面时回退本应用详情
+     */
+    private fun openPermissionSettings(intent: Intent) {
+        val options =
+            android.app.ActivityOptions
+                .makeBasic()
+                .apply { launchDisplayId = 0 }
+        runCatching { startActivity(intent, options.toBundle()) }.onFailure {
+            snack(getString(R.string.phone_permissions_settings_unavailable))
+            if (intent.action != Settings.ACTION_APPLICATION_DETAILS_SETTINGS) {
+                runCatching {
+                    startActivity(
+                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, ("package:$packageName").toUri()),
+                        options.toBundle(),
+                    )
+                }
+            }
+        }
+    }
+
+    /** 分别展示系统检查结果和用户确认的厂商后台设置 */
+    private fun showBackgroundPermissionGuide() {
+        val vendor = "${Build.MANUFACTURER} ${Build.BRAND}".lowercase(Locale.ROOT)
+        val guide =
+            when {
+                listOf("xiaomi", "redmi").any { it in vendor } -> R.string.phone_permissions_vendor_xiaomi
+                listOf("huawei", "honor").any { it in vendor } -> R.string.phone_permissions_vendor_huawei
+                listOf("vivo", "iqoo").any { it in vendor } -> R.string.phone_permissions_vendor_vivo
+                listOf("oppo", "oneplus", "realme").any { it in vendor } -> R.string.phone_permissions_vendor_oppo
+                else -> R.string.phone_permissions_vendor_common
+            }
+        val confirmed = phonePermissions?.backgroundConfirmed == true
+        DarkMessageDialog.show(
+            this,
+            getString(R.string.phone_permissions_vendor),
+            getString(guide) + "\n\n" + getString(R.string.phone_permissions_vendor_note),
+            listOf(
+                DarkMessageDialog.Action(getString(R.string.phone_permissions_open_app), DarkMessageDialog.Emphasis.PRIMARY) {
+                    openPermissionSettings(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, ("package:$packageName").toUri()))
+                },
+                DarkMessageDialog.Action(
+                    getString(
+                        if (confirmed) R.string.phone_permissions_clear_acknowledgement else R.string.phone_permissions_acknowledge,
+                    ),
+                ) {
+                    phonePermissions?.setBackgroundConfirmed(!confirmed)
+                },
+                DarkMessageDialog.Action(getString(R.string.phone_permissions_close)) {},
+            ),
+        )
+    }
+
     private fun bindExpandable(
         headerId: Int,
         body: View,
@@ -965,6 +1581,8 @@ class MainActivity : GlassActivity() {
     private fun tickHero() {
         homeDashboard?.refresh()
         refreshConnectionSection()
+        phonePermissions?.refresh()
+        soundStatus?.takeIf { it.isShown }?.text = SessionController.audioStatus()
         val s =
             when {
                 SessionController.videoSender?.isRunning == true -> HeroState.CONNECTED
@@ -977,6 +1595,7 @@ class MainActivity : GlassActivity() {
             heroState = s
             applyHeroState(s)
         }
+        findViewById<View>(R.id.homeSessionNote).visibility = if (s == HeroState.CONNECTED) View.VISIBLE else View.GONE
         // 连接中：副标题跟随阶段提示（英雄卡内即可见，不必划到底部看日志）
         if (s == HeroState.CONNECTING) {
             heroSubline.text = SessionController.phaseHint ?: DEFAULT_CONNECTING_HINT
@@ -1112,18 +1731,32 @@ class MainActivity : GlassActivity() {
         heroSubline.text = String.format(Locale.US, "车机已连接 %02d:%02d", mm, ss)
     }
 
-    /** 连接卡声音状态：CarLife 音源是否启用/是否已开始送音频 */
+    /** 连接卡声音状态：CarLife 音源免授权；兼容模式需要投屏授权。 */
     private fun updateAudioTag() {
+        val compatibility =
+            SessionController.audioPreference ==
+                io.github.shaonialife.buicklinkplus.audio.AudioPreference.COMPATIBILITY
+        val projectionReady = CarPlayService.mediaProjection != null
         val label =
             when {
-                heroState != HeroState.CONNECTED -> "车机侧声音 · 启动连接时可选"
+                heroState != HeroState.CONNECTED ->
+                    if (compatibility) "车机侧声音 · 兼容模式（连接时需投屏授权）" else "车机侧声音 · 启动连接时可选"
                 !SessionController.audioEnabledForSession -> "车机侧声音 · 关闭"
                 SessionController.audioSender?.isRunning == true ->
-                    "车机声音 · " +
-                        SessionController.audioSender
-                            ?.phoneMuteStatus
-                            .orEmpty()
-                            .ifEmpty { "CarLife 音源" }
+                    if (compatibility) {
+                        "兼容采集 · " +
+                            SessionController.audioSender
+                                ?.phoneMuteStatus
+                                .orEmpty()
+                                .ifEmpty { "录屏采集中" }
+                    } else {
+                        "车机声音 · " +
+                            SessionController.audioSender
+                                ?.phoneMuteStatus
+                                .orEmpty()
+                                .ifEmpty { "CarLife 音源" }
+                    }
+                compatibility && !projectionReady -> "兼容模式 · 需投屏授权"
                 else -> "车机声音 · 启动中"
             }
         audioTag.contentDescription = label
@@ -1131,7 +1764,7 @@ class MainActivity : GlassActivity() {
         if (heroState != HeroState.CONNECTED) return
         val on =
             SessionController.audioEnabledForSession &&
-                SessionController.audioSender?.isRunning == true
+                (SessionController.audioSender?.isRunning == true || (compatibility && projectionReady))
         val iconResource = if (on) R.drawable.ic_music_small else R.drawable.ic_volume_off_small
         val iconColor = UiAppearance.color(this, if (on) R.color.m3_primary else R.color.m3_outline)
         if (audioTagIconResource != iconResource || audioTagIconColor != iconColor) {
@@ -1143,9 +1776,53 @@ class MainActivity : GlassActivity() {
         }
     }
 
+    private fun showSleepGuidance() {
+        val vivo =
+            android.os.Build.MANUFACTURER
+                .contains("vivo", true)
+        val guide =
+            if (vivo) {
+                "vivo：请在设置／i管家中允许 Buick Link + 自启动、后台高耗电运行，并在最近任务中锁定应用。不同系统版本的菜单名称可能不同。"
+            } else {
+                "请为 Buick Link + 允许后台运行，并检查自启动与电池优化设置。"
+            }
+
+        fun openSettings(intent: android.content.Intent) {
+            runCatching {
+                val options =
+                    android.app.ActivityOptions
+                        .makeBasic()
+                        .apply { launchDisplayId = 0 }
+                startActivity(intent, options.toBundle())
+            }.onFailure { snack("系统设置页不可用，请手动前往手机设置") }
+        }
+        DarkMessageDialog.show(
+            this,
+            "息屏与后台运行",
+            guide +
+                "\n\n跟随系统：允许真实息屏。" +
+                "\n\n兼容暗屏：手机保持常亮，用黑色暗幕降低亮度，可用于锁屏会冻结画面的机型；vivo/iQOO 默认开启。",
+            actions =
+                listOf(
+                    DarkMessageDialog.Action("电池优化设置", DarkMessageDialog.Emphasis.PRIMARY) {
+                        openSettings(android.content.Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                    },
+                    DarkMessageDialog.Action("应用后台设置") {
+                        openSettings(
+                            android.content.Intent(
+                                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                ("package:" + packageName).toUri(),
+                            ),
+                        )
+                    },
+                    DarkMessageDialog.Action("知道了") {},
+                ),
+        )
+    }
+
     /** 按连接前检查结果更新准备项 */
     private fun updateReadyRow() {
-        val preparation = ConnectionPreflight.inspect(this, requireAudio = false)
+        val preparation = ConnectionPreflight.inspect(this, SessionController.audioEnabledForSession)
         val btGranted =
             ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) ==
                 PackageManager.PERMISSION_GRANTED
@@ -1202,6 +1879,7 @@ class MainActivity : GlassActivity() {
         }
         val btMode = BtConnectionPrefs.get(this, TargetDevicePrefs.get(this)?.address)
         findViewById<TextView>(R.id.btnBtConnectionMode).text = getString(R.string.ui_bluetooth_strategy, btMode.title)
+
         val targetReady = preparation.checks.any { it.requirement == ConnectionPreflight.Requirement.TARGET && it.ready }
         if (!targetReady && btGranted) {
             btBadge.visibility = View.VISIBLE
@@ -1218,13 +1896,20 @@ class MainActivity : GlassActivity() {
         findViewById<TextView>(R.id.environmentStatus).text =
             getString(R.string.connection_preflight_status, preparation.describe())
         if (heroState == HeroState.IDLE) {
-            ctaLabel.text = if (connectionCheckRunning) "正在检查环境…" else "启动连接"
+            ctaLabel.text =
+                when {
+                    connectionCheckRunning -> "正在检查环境…"
+                    preparation.ready -> "启动连接"
+                    else -> "检查连接环境"
+                }
             ctaButton.isEnabled = !connectionCheckRunning
             if (!connectionCheckRunning) {
                 heroSubline.text =
-                    preparation.missing.firstOrNull()?.let {
-                        "请先处理：${it.requirement.title}（${it.requirement.action}）"
-                    } ?: "连接环境已就绪，可以启动无线连接"
+                    if (preparation.ready) {
+                        "连接环境已就绪，可以启动无线连接"
+                    } else {
+                        preparation.missing.firstOrNull()?.let { "下一步：${it.requirement.action}，详见连接准备" } ?: "请检查连接准备"
+                    }
             }
         }
     }
@@ -2141,6 +2826,8 @@ class MainActivity : GlassActivity() {
         runCatching { activeDisclaimer?.dismiss() }
         activeDisclaimer = null
         pendingTargetPickerAfterPermission = false
+        pendingProjectionAfterAudioPermission = false
+        pendingStartAfterProjection.set(false)
         pendingStartAfterBtPermission.set(false)
         pendingStartAfterLocationPermission.set(false)
         // 蓝牙扫描/配对监听随界面销毁收尾：Activity 退出后不再需要（也避免广播泄漏）

@@ -22,12 +22,15 @@
         android:name="android.permission.BLUETOOTH_SCAN"
         android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <!-- 读取蜂窝网络类型（5G/4G），用于 dock 顶部的手机信号显示 -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <!-- 音频通道激活时静音手机媒体音量（声音只从车机出），断开恢复 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
@@ -110,7 +113,7 @@
         <service
             android:name=".service.CarPlayService"
             android:exported="false"
-            android:foregroundServiceType="connectedDevice" />
+            android:foregroundServiceType="connectedDevice|mediaProjection" />
 
         <!-- link_plus 原桌面页（Dock/Grid/MapStatus）与车机双栏设置已下线：
              对应类保留在源码中供后续清理，但不再注册为 Activity -->

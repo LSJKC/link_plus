@@ -11,11 +11,15 @@
     <string name="car_settings">车机设置</string>
     <string name="connection_preflight_pending">待检查</string>
     <string name="connection_preflight_description">连接前检查环境，热点参数由蓝牙握手后自动获取</string>
-    <string name="connection_preflight_status">%1$s\n热点名称和密码：蓝牙握手成功后自动获取\n声音来自 CarLife 音源</string>
+    <string name="connection_preflight_status">%1$s\n热点名称和密码：蓝牙握手成功后自动获取\n声音来自 CarLife 音源，无需额外授权</string>
     <string name="map_scale_hint">较小比例显示更多地图内容，松手后应用；显示模式在下次连接生效。普通模式可交接同一任务，高德车载页面不与普通导航同步。</string>
     <string name="map_to_phone">将普通地图交给手机</string>
     <string name="map_to_car">确认并交回车机</string>
     <string name="map_content_scale">地图内容比例：%1$d%%</string>
     <string name="settings_search_hint">搜索功能，如：壁纸、帧率、连接</string>
     <string name="settings_search_empty">没有找到相关设置，请尝试功能名或常用词</string>
+    <string name="home_prepare">连接准备</string>
+    <string name="home_shortcuts">常用入口</string>
+    <string name="home_session">本次连接</string>
+    <string name="home_travel">出行概览</string>
 </resources>

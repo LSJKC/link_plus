@@ -4,7 +4,7 @@
 > 适用仓库：`F:\carplay\_newproj\linkplus_carlife`（从 `schemawisp/link_plus` fork 的 CarLife 适配分支）。  
 > 相关文档：[CARLIFE_PORT_PLAN.md](CARLIFE_PORT_PLAN.md)、[PORT_MATRIX.md](PORT_MATRIX.md)、[carlife-mechanism.md](carlife-mechanism.md)、[no-adb-model.md](no-adb-model.md)。
 >
-> 最新测试包见 GitHub Releases（当前版本 `0.0.9-carlife.1`，versionCode 158）。  
+> 最新测试包见 GitHub Releases（当前版本 `0.0.9-carlife.2`，versionCode 159）。  
 > CI 构建产物：GitHub Actions workflow `build-buick-apk`（push `carlife-port` 自动构建 `app-buick.apk` artifact）。
 
 ## 1. 目标与原则
@@ -135,7 +135,7 @@ Get-FileHash app\build\outputs\apk\buick\app-buick.apk -Algorithm SHA256
 ```
 
 3. 打 tag（与版本一致）：`git tag vX.Y.Z-carlife && git push origin vX.Y.Z-carlife`；
-4. 在 GitHub Release 附上 APK、版本号、SHA-256、变更摘要、日志反馈方式（应用内「设置 → 日志与关于 → 导出日志」）；不随 Release 分发旧闭源应用资源；
+4. 在 GitHub Release 附上 APK、版本号、SHA-256、变更摘要、日志反馈方式（应用内「设置 → 帮助与诊断」分享/保存日志 ZIP）；不随 Release 分发旧闭源应用资源；
 5. 实车结果记录到 Release 说明或随日志反馈；失败项按 `PORT_MATRIX.md` 回写状态。
 
 ## 8. 禁止事项
@@ -151,4 +151,4 @@ Get-FileHash app\build\outputs\apk\buick\app-buick.apk -Algorithm SHA256
 - 分支保护规则（`main` 禁止直推、`carlife-port` 是否要求 PR）；
 - Issue 模板 / 实车反馈渠道（日志上传方式、机型模板）。
 
-> 版本与 Release 命名约定（2026-11-06 起）：versionName 跟随上游，例如上游 0.0.9 → `0.0.9-carlife`；versionCode 每次出包 +1（Android 只认 versionCode）。Release tag 用 `vX.Y.Z-carlife`，资产名 `app-buick-X.Y.Z-carlife.apk`。
+> 版本与 Release 命名约定（2026-11-06 起）：versionName 跟随上游，例如上游 0.0.9 → `0.0.9-carlife`；同一上游版本内重出测试包用 `.n` 后缀（当前 `0.0.9-carlife.2`）。versionCode 每次出包 +1（Android 只认 versionCode）。Release tag 用 `vX.Y.Z-carlife〔.n〕`，资产名 `app-buick-X.Y.Z-carlife〔.n〕.apk`。

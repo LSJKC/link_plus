@@ -17,7 +17,7 @@ AndroidX 传递模块、Kotlin coroutines 1.6.4、JetBrains annotations 13.0 和
 
 APK 内的声明见 [embedded-third-party-notices.txt](../app/src/main/assets/embedded-third-party-notices.txt)。图标来自 [Ant Design Icons](https://github.com/ant-design/ant-design-icons)，原始 SVG 和许可在 [third-party/ant-design-icons](third-party/ant-design-icons/)，资源映射见 [icon-sources.json](icon-sources.json)。
 
-应用使用系统字体，壁纸为程序生成背景或用户自定义图片（不内置第三方图片）。第三方应用图标等内容来自用户安装的应用，相关权利归原作者所有。
+应用使用系统字体，壁纸使用 link_plus 原版方案（用户自选图片、校准、切片；无生成壁纸、无内置第三方图片）。第三方应用图标等内容来自用户安装的应用，相关权利归原作者所有。
 
 ## 对应源码
 

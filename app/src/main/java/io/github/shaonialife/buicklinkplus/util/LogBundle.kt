@@ -1,10 +1,16 @@
 /* 日志打包：把一个压缩包做全——应用/设备/CarLife 引擎/设置/本次启动历史日志/历史文件日志。
  *
- * 用户要求（旧软件习惯）：导出日志不要一堆散文件，也不要导出后去文件夹翻——
- * 一个 `carlife-logs-<时间戳>.zip` 里带齐排查所需信息，并且可以直接系统分享给开发者。
+ * 用户要求（旧软件习惯）：导出日志不要一堆散文件——一个
+ * `carlife-logs-<时间戳>.zip` 里带齐排查所需信息。
+ *
+ * 语义（2026-11-06 用户反馈修正）：
+ * - 分享/导出 ZIP 只在 `cacheDir/log-bundles/` 生成，**不落下载目录**；
+ * - 只有用户显式点「保存日志」才通过 MediaStore 写一份到「下载/Buick Link＋」；
+ * - 分享走 FileProvider + ACTION_SEND，不产生任何 Downloads 文件。
  *
  * 由 [io.github.shaonialife.buicklinkplus.util.LogExporter] 对外暴露稳定 API：
- * exportBundle / shareBundle / shareLastBundle / exportAndShare / latestBundle。
+ * exportBundle / shareBundle / shareLastBundle / saveBundleToDownloads / saveLastBundle /
+ * latestBundle。
  *
  * ZIP 内容：
  *   README.txt           反馈说明
@@ -16,10 +22,8 @@
  *   logs/ 下 *.log       历史日志（如 main_debug.log，已脱敏）
  *
  * 分享依赖 Manifest 里的 FileProvider（authority = `<包名>.fileprovider`，
- * paths = `@xml/file_paths`，本目录已新建 `res/xml/file_paths.xml`）。
- * 为让「导出」和「分享」都不卡在 manifest 改动上：导出时同时把 ZIP 另存到
- * 「下载/Buick Link＋」（MediaStore，无需存储权限），分享优先 FileProvider，
- * 未声明 provider 时退化为分享该 Downloads URI。
+ * paths = `@xml/file_paths`，`res/xml/file_paths.xml` 已提供 cache-path）。
+ * 未声明 provider 时分享返回 false（不再用 Downloads 兜底，避免用户没点保存却落盘）。
  *
  * 注意：端口探测最多约 6×250ms，建议在后台线程调用（UI 入口由 activation-ui 负责）。
  * 日志/设置内容全部经过 [LogRedactor] 脱敏；设置里的敏感键值额外隐藏。
@@ -74,19 +78,13 @@ object LogBundle {
 
     private const val FILE_PROVIDER_SUFFIX = ".fileprovider"
 
-    /** 另存副本的下载目录（用户不用去 cache 里翻；MediaStore 写入无需存储权限）。 */
+    /** 显式「保存日志」时写入的下载目录（MediaStore，无需存储权限）。 */
     private val RELATIVE_DIR = "${Environment.DIRECTORY_DOWNLOADS}/Buick Link＋"
 
     /** 文件管理器里展示的绝对路径前缀（主用户外部存储；分区存储下即 /sdcard）。 */
     private const val DISPLAY_ROOT = "/storage/emulated/0"
 
-    /** 最近一次写入 Downloads 的 content URI / 文件名 / 展示路径（FileProvider 缺失时的分享兜底）。 */
-    @Volatile
-    private var lastDownloadsUri: Uri? = null
-
-    @Volatile
-    private var lastDownloadsName: String = ""
-
+    /** 最近一次「保存日志」写入 Downloads 的展示路径（仅展示/日志用；分享不写）。 */
     @Volatile
     private var lastDownloadsDisplayPath: String? = null
 
@@ -120,6 +118,7 @@ object LogBundle {
     /**
      * 生成日志包 ZIP 到 `cacheDir/log-bundles/carlife-logs-<yyyyMMdd-HHmmss>.zip`。
      *
+     * 只写应用缓存目录（分享/导出都不落下载目录；需要保存请调 [saveToDownloads]/[saveLast]）。
      * 失败（无存储/写失败）返回 null；成功返回文件。建议后台线程调用。
      */
     fun export(context: Context): File? {
@@ -141,8 +140,6 @@ object LogBundle {
                 appendFileLogs(appContext, zip)
             }
             trimOldBundles(dir)
-            // 另存一份到「下载/Buick Link＋」：用户不用去 cache 翻；无 FileProvider 时分享也用它兜底
-            runCatching { copyToDownloads(appContext, file) }
             file
         }.getOrElse { error ->
             Log.w(TAG, "生成日志包失败", error)
@@ -163,8 +160,8 @@ object LogBundle {
     /**
      * 分享最近一次日志包；没有现成包会先 [export] 一个（分享按钮一次操作即可）。
      *
-     * 优先 FileProvider；Manifest 尚未声明 provider 时退化为分享「下载/Buick Link＋」里的
-     * MediaStore URI（同样带临时读权限），保证现场随时能发出去。
+     * **只分享，不落盘**：ZIP 留在应用缓存目录，通过 FileProvider content URI 交给系统 chooser；
+     * Manifest 未声明 provider 时返回 false（不再用 Downloads 兜底）。
      */
     fun shareLast(context: Context): Boolean {
         val file = latestBundle(context) ?: export(context) ?: return false
@@ -172,27 +169,51 @@ object LogBundle {
     }
 
     /**
-     * 一键「导出并分享」：生成 ZIP、另存一份到「下载/Buick Link＋」，并尽力拉起分享。
+     * 兼容保留：生成 cache ZIP 后直接分享（不写下载目录）。新 UI 请优先用
+     * `LogExporter.shareLastBundle`（分享）与 [saveLast]（保存）两个入口。
      *
-     * @return true = 导出成功；分享为尽力而为（没有 FileProvider/没有可分享应用只写日志，
-     *   不影响导出结果，UI 的「导出」按钮按本返回值提示即可）
+     * @return true = 已发起分享
      */
     fun exportAndShare(context: Context): Boolean {
         val file = export(context) ?: return false
-        if (!share(context, file)) {
-            val reason = if (isShareSupported(context)) "系统无可用分享目标" else "Manifest 未声明 FileProvider"
-            Log.i(TAG, "日志包已导出，但未发起分享（$reason）")
-        }
-        return true
+        return share(context, file)
     }
 
-    /** 最近一次导出到「下载/Buick Link＋」的展示路径（用户按这个找文件）；没有返回 null。 */
+    /** 最近一次「保存日志」写入「下载/Buick Link＋」的展示路径；没保存过返回 null。 */
     fun lastDownloadDisplayPath(): String? = lastDownloadsDisplayPath
 
     /**
-     * 系统分享日志包（ACTION_SEND + content URI + 临时读权限）。
+     * 把缓存里的日志包**显式保存**到「下载/Buick Link＋」（MediaStore，无需存储权限）。
      *
-     * @return true = 已发起分享 chooser；false = 文件不存在/无可用分享通路
+     * 只在用户点「保存日志」时调用；分享路径不会调用本方法。
+     *
+     * @return 展示路径（如 `/storage/emulated/0/Download/Buick Link＋/xxx.zip`）；失败 null
+     */
+    fun saveToDownloads(
+        context: Context,
+        file: File,
+    ): String? {
+        if (!file.isFile || file.length() <= 0L) return null
+        val appContext = context.applicationContext ?: context
+        return runCatching { copyToDownloads(appContext, file) }.getOrNull()?.let { lastDownloadsDisplayPath }
+    }
+
+    /**
+     * 保存最近一次日志包到「下载/Buick Link＋」；没有现成包会先 [export] 一个。
+     *
+     * @return true = 已保存到 Downloads
+     */
+    fun saveLast(context: Context): Boolean {
+        val file = latestBundle(context) ?: export(context) ?: return false
+        return saveToDownloads(context, file) != null
+    }
+
+    /**
+     * 系统分享日志包（ACTION_SEND + FileProvider content URI + 临时读权限）。
+     *
+     * 只分享缓存文件，不写下载目录。
+     *
+     * @return true = 已发起分享 chooser；false = 文件不存在/未声明 FileProvider/无分享目标
      */
     fun share(
         context: Context,
@@ -201,23 +222,19 @@ object LogBundle {
         if (!file.isFile || file.length() <= 0L) return false
         val appContext = context.applicationContext ?: context
         val authority = appContext.packageName + FILE_PROVIDER_SUFFIX
-        if (isShareSupported(appContext)) {
-            val uri = runCatching { FileProvider.getUriForFile(appContext, authority, file) }.getOrNull()
-            if (uri != null) return dispatchShare(context, uri, file.name)
+        if (!isShareSupported(appContext)) {
+            Log.w(TAG, "无法分享：Manifest 未声明 FileProvider（authorities=$authority）")
+            return false
+        }
+        val uri = runCatching { FileProvider.getUriForFile(appContext, authority, file) }.getOrNull()
+        if (uri == null) {
             Log.w(TAG, "FileProvider.getUriForFile 失败（检查 res/xml/file_paths.xml 是否覆盖 $BUNDLE_DIR）")
+            return false
         }
-        // 兜底：分享最近一次写入 Downloads 的 media URI（不需要 FileProvider）；
-        // 新进程里可能还没有 Downloads 副本，就地把 cache 里的 ZIP 再写一份过去。
-        val fallbackUri = lastDownloadsUri ?: runCatching { copyToDownloads(appContext, file) }.getOrNull()
-        if (fallbackUri != null) {
-            Log.i(TAG, "FileProvider 不可用，退化为 Downloads URI 分享: $lastDownloadsDisplayPath")
-            return dispatchShare(context, fallbackUri, lastDownloadsName.ifBlank { file.name })
-        }
-        Log.w(TAG, "无法分享：Manifest 未声明 FileProvider（authorities=$authority），且当前进程没有 Downloads 副本")
-        return false
+        return dispatchShare(context, uri, file.name)
     }
 
-    /** Manifest 是否已声明本应用的 FileProvider（未声明时仍可用 Downloads 兜底分享）。 */
+    /** Manifest 是否已声明本应用的 FileProvider（分享必需；未声明时保存仍可用）。 */
     fun isShareSupported(context: Context): Boolean =
         runCatching {
             val appContext = context.applicationContext ?: context
@@ -260,7 +277,7 @@ object LogBundle {
         return result.get()
     }
 
-    /** 把日志包另存到 MediaStore Downloads/Buick Link＋（无需存储权限）；失败返回 null。 */
+    /** 「保存日志」用：把日志包写入 MediaStore Downloads/Buick Link＋（无需存储权限）；失败返回 null。 */
     private fun copyToDownloads(
         context: Context,
         source: File,
@@ -280,10 +297,8 @@ object LogBundle {
             resolver.openOutputStream(uri)?.use { output -> source.inputStream().use { it.copyTo(output) } }
                 ?: throw IllegalStateException("openOutputStream 返回 null")
             resolver.update(uri, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
-            lastDownloadsUri = uri
-            lastDownloadsName = source.name
             lastDownloadsDisplayPath = "$DISPLAY_ROOT/$RELATIVE_DIR/${source.name}"
-            Log.i(TAG, "日志包已另存: $lastDownloadsDisplayPath")
+            Log.i(TAG, "日志包已保存: $lastDownloadsDisplayPath")
             uri
         } catch (error: Exception) {
             // 半截文件（IS_PENDING=1）对用户不可见，但会占空间——清掉
@@ -309,8 +324,8 @@ object LogBundle {
             appendLine("  logs/current.log     本次 App 启动以来的历史日志（会话缓冲）")
             appendLine("  logs/*.log           历史文件日志（如 main_debug.log，已脱敏）")
             appendLine()
-            appendLine("导出位置: 下载/Buick Link＋/<本文件名>（应用私有目录另缓存一份供分享）")
-            appendLine("分享方式: 设置 → 日志与关于 →「分享日志（ZIP）」，选微信/QQ/邮件发送本压缩包。")
+            appendLine("保存位置: 点「保存日志」后写入 下载/Buick Link＋/<本文件名>；分享不落盘。")
+            appendLine("分享方式: 设置 → 日志与关于 →「分享日志（ZIP）」，选微信/QQ/邮件直接发送本压缩包。")
             appendLine()
             appendLine("反馈方式:")
             appendLine("  1. 把整个 zip 直接发送给开发者（微信/QQ/邮件均可）；")

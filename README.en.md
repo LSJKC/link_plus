@@ -10,10 +10,20 @@ No developer options, wireless debugging or ADB: install the APK, grant the norm
 
 Compatibility depends on the phone and receiver. Keeping a connection while the screen is off remains a known issue on Android 17. Please do not operate the phone while driving.
 
+## UI (link_plus original first)
+
+- **Home**: the original link_plus layout (connection status with start/stop, target receiver, connection preparation, shortcuts, picture & sound, music/navigation/weather cards), plus a prominent **CarLife** row (open CarLife+ → wireless connection first) and a **local Bluetooth MAC** row (tap to fill in manually). No runtime-log card on the home screen.
+- **Settings top level**: CarLife / Connection & devices / Display & picture / Audio / Appearance & wallpaper / Help & diagnostics; duplicate legacy entries (desktop app management, car apps, dashboard widget, supersampling, landscape, dock, map split) are hidden and unreachable.
+- **Display & picture**: original picture-margin sliders (left/top/right/bottom, inward only, applied on next connection) plus resolution/fps/bitrate.
+- **Audio**: original strategies — Auto / Quality first (CarLife source, no projection permission) / Compatibility (requires recording + projection permission).
+- **Appearance & wallpaper**: original wallpaper (pick image, calibrate, crop); no generated wallpapers and no bundled third-party images.
+- **Help & diagnostics**: "Share logs (ZIP)" shares without writing to Downloads; only "Save logs (ZIP)" writes to "Download/Buick Link+".
+- **CarLife page**: engine detection / port self-check / reconnect / log diagnostics, plus five switches: TTS, navigation guidance, wallpaper background, picture corner radius, vehicle GPS.
+
 ## Field-test package and log feedback
 
-- Test package: the `.buick` APK (`app/build/outputs/apk/buick/app-buick.apk`); version and SHA-256 are published with the release notes.
-- Log feedback: use "Settings → Logs & About → Export logs" in the app, and include phone/receiver model, system version, app version and reproduction steps.
+- Test package: the `.buick` APK (`app/build/outputs/apk/buick/app-buick.apk`), currently `0.0.9-carlife.2` (versionCode 159); version and SHA-256 are published with the release notes.
+- Log feedback: use "Settings → Help & diagnostics" to share or save the log ZIP, and include phone/receiver model, system version, app version and reproduction steps.
 - Developer debugging: `scripts/p1a-field-check.ps1` captures and validates CarLife log markers (`scripts/verify-carlife-log.ps1` validates an existing log).
 
 ## Build
@@ -31,6 +41,7 @@ The test APK uses the `.buick` suffix. Configure release signing with your own `
 
 - [Features and UI](docs/PORT_MATRIX.md)
 - [Goals, implementation and testing](docs/CARLIFE_PORT_PLAN.md)
+- [Original-feature audit and restore list](docs/AUDIT_RESTORE.md)
 - [CarLife connection mechanism](docs/carlife-mechanism.md)
 - [No-ADB model and permissions](docs/no-adb-model.md)
 - [GitHub downstream sync workflow](docs/GITHUB_WORKFLOW.md)
@@ -46,7 +57,7 @@ Built on [schemawisp/link_plus](https://github.com/schemawisp/link_plus) (Buick 
 
 - Upstream base: [schemawisp/link_plus](https://github.com/schemawisp/link_plus) (MIT); this repository is a downstream fork and keeps the upstream LICENSE.
 - CarLife protocol/client/video/audio parts use the MIT-licensed implementation from [CarPToCarL](https://github.com/jjuugk/CarPToCarL) (commit `7b729fb`, Copyright (c) 2026 lizhihua) and are adapted to the link_plus pipeline (decode to the `VideoSender` encoder surface, audio through `AudioSender`, no-ADB rework, etc.). See [docs/third-party/CarPToCarL-NOTICE.md](docs/third-party/CarPToCarL-NOTICE.md) for the per-file notice; source files also keep the upstream attribution header.
-- **This project does not provide or distribute resources from the old closed-source application** (APKs, images, logs, etc.), and bundles no third-party wallpaper images: wallpapers are either generated backgrounds or user-provided images.
+- **This project does not provide or distribute resources from the old closed-source application** (APKs, images, logs, etc.); wallpapers use the original link_plus scheme (user-picked image, calibration, cropping), with no generated wallpapers and no bundled third-party images.
 - The MIT copyright and permission notices of the upstream and reference implementations are retained; keep them when redistributing.
 
 This is an unofficial project, unaffiliated with and not authorized or certified by Buick, General Motors, Apple or Baidu. All trademarks belong to their respective owners. Please follow local traffic laws.

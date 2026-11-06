@@ -2,13 +2,16 @@ package io.github.shaonialife.buicklinkplus.render
 
 import android.content.Context
 import android.graphics.Bitmap
-import io.github.shaonialife.buicklinkplus.ui.GeneratedWallpapers
 import io.github.shaonialife.buicklinkplus.ui.WallpaperStore
 import io.github.shaonialife.buicklinkplus.util.Bg
 
 /**
- * P1B 壁纸来源（可选组件）：从 link_plus [WallpaperStore] 读取当前壁纸，按画布尺寸做 cover
- * 预合成后异步回调，供 [CarLifeComposer.setWallpaper] 使用。
+ * P1B 壁纸来源：直接复用 link_plus 原版 [WallpaperStore]（用户壁纸 + 原版默认底色 + 校准/桌面切片），
+ * 按 CarLife 合成器画布尺寸取 aspectFill 位图后异步回调，供 [CarLifeComposer.setWallpaper] 使用。
+ *
+ * 本类不生成、不内置任何壁纸素材：壁纸内容完全由原版 WallpaperStore / WallpaperActivity 决定；
+ * 未设置用户壁纸时原版 `aspectFillCanvas` 会返回纯色默认底（WallpaperStore.BACKGROUND_COLOR），
+ * 与原版桌面观感一致；若原版加载失败则回调 null，让合成器回退同一个默认底色。
  *
  * 为什么需要单独一层：合成器只接受位图、不碰文件/SharedPreferences；用户更换壁纸时由本类
  * 监听 [WallpaperStore] 版本变化自动重载，合成器只负责上传纹理。
@@ -16,7 +19,7 @@ import io.github.shaonialife.buicklinkplus.util.Bg
  * 线程模型：[start]/[updateCanvas]/[stop] 任意线程可调用；回调在后台线程（`Bg` 池）触发。
  * 回调的 Bitmap 属于 WallpaperStore 的画布缓存（可能被复用），**调用方不得 recycle**。
  *
- * ### 接入步骤（Lead 后续统一接线）
+ * ### 接入步骤
  * ```
  * val wallpaperSource = CarLifeWallpaperSource(context, log = ::log)
  * composer.start()
@@ -47,7 +50,7 @@ class CarLifeWallpaperSource(
      *
      * @param canvasWidth 编码画布宽（= VideoProfile.width）
      * @param canvasHeight 编码画布高
-     * @param onWallpaper 壁纸就绪回调（后台线程；null = 加载失败，合成器应回退纯色底）
+     * @param onWallpaper 壁纸就绪回调（后台线程；null = 原版加载失败，合成器回退默认底色）
      */
     fun start(
         canvasWidth: Int,
@@ -109,12 +112,9 @@ class CarLifeWallpaperSource(
             height = canvasHeight
         }
         Bg.run("carlife-wallpaper") {
-            // WallpaperStore 无用户壁纸时会返回生成壁纸；这里再兜一层，避免任何情况下回黑底
+            // 原版 WallpaperStore：有用户壁纸用用户图，没有时返回原版纯色默认底（aspectFill 后整幅画布同色）
             val bitmap =
                 runCatching { WallpaperStore.aspectFillCanvas(appContext, width, height) }.getOrNull()
-                    ?: runCatching {
-                        GeneratedWallpapers.render(appContext, GeneratedWallpapers.DEFAULT_INDEX, width, height)
-                    }.getOrNull()
             var deliver: ((Bitmap?) -> Unit)? = null
             synchronized(lock) {
                 if (started && generation == generationSnapshot) {
@@ -122,7 +122,7 @@ class CarLifeWallpaperSource(
                 }
             }
             if (bitmap == null) {
-                log("CARLIFE-COMPOSER: 壁纸加载/生成失败，合成器使用纯色底")
+                log("CARLIFE-COMPOSER: 原版壁纸加载失败，合成器回退默认底色（${width}x$height）")
             } else {
                 log("CARLIFE-COMPOSER: 壁纸来源已加载 ${bitmap.width}x${bitmap.height}（画布 ${width}x$height）")
             }

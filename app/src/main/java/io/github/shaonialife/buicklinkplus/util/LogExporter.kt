@@ -74,37 +74,52 @@ object LogExporter {
         }
     }
 
-    // ---- 日志包（ZIP + 分享）：一个压缩包带应用/设备/CarLife 引擎/设置/日志 ----
+    // ---- 日志包（ZIP + 分享/保存）：一个压缩包带应用/设备/CarLife 引擎/设置/日志 ----
 
     /**
-     * 生成完整日志包 ZIP（cacheDir/log-bundles/carlife-logs-<yyyyMMdd-HHmmss>.zip），
-     * 并另存一份到「下载/Buick Link＋」（用户不用去 cache 里翻，也兼容无 FileProvider 的分享兜底）。
+     * 生成完整日志包 ZIP（cacheDir/log-bundles/carlife-logs-<yyyyMMdd-HHmmss>.zip）。
      *
+     * **只写应用缓存目录，不落下载目录**；分享/导出都不会自动保存文件，
+     * 需要保存时调用 [saveBundleToDownloads] 或 [saveLastBundle]。
      * 内含 app.txt / device.txt / carlife-engine.txt / settings.txt / README.txt、
      * logs/current.log（本次启动历史）与 logs/ 下 *.log（历史文件日志），详见 [LogBundle]。
      * 生成失败返回 null。含本机端口探测（最多约 1.5s），建议后台线程调用。
      */
     fun exportBundle(context: Context): File? = LogBundle.export(context)
 
-    /** 分享已生成的日志包（FileProvider content URI；未声明 provider 时退化为 Downloads URI）。 */
+    /** 系统分享已生成的缓存日志包（FileProvider content URI）；**不保存**到下载目录。 */
     fun shareBundle(
         context: Context,
         file: File,
     ): Boolean = LogBundle.share(context, file)
 
-    /** 最近一次生成的日志包；没有返回 null。 */
+    /** 最近一次生成的缓存日志包；没有返回 null。 */
     fun latestBundle(context: Context): File? = LogBundle.latestBundle(context)
 
-    /** 分享最近一次日志包（没有会先导出一个）；返回是否已发起分享。 */
+    /** 分享最近一次日志包（没有会先生成缓存 ZIP）；**不保存**到下载目录。返回是否已发起分享。 */
     fun shareLastBundle(context: Context): Boolean = LogBundle.shareLast(context)
 
-    /** 一键「导出并分享」：生成 ZIP + 另存 Downloads + 尽力拉起分享。返回是否导出成功。 */
+    /** 兼容保留：生成缓存 ZIP 后直接分享（不写下载目录）；新 UI 请用 shareLastBundle + saveLastBundle。 */
     fun exportAndShare(context: Context): Boolean = LogBundle.exportAndShare(context)
 
-    /** 最近一次导出到「下载/Buick Link＋」的展示路径；没有返回 null。 */
+    /**
+     * 把缓存里的日志包**显式保存**到「下载/Buick Link＋」（MediaStore，无需存储权限）。
+     * 供 UI「保存日志」按钮使用；分享路径不会调用本方法。
+     *
+     * @return 展示路径（如 `/storage/emulated/0/Download/Buick Link＋/xxx.zip`）；失败 null
+     */
+    fun saveBundleToDownloads(
+        context: Context,
+        file: File,
+    ): String? = LogBundle.saveToDownloads(context, file)
+
+    /** 保存最近一次日志包到「下载/Buick Link＋」（没有会先生成缓存 ZIP）。返回是否已保存。 */
+    fun saveLastBundle(context: Context): Boolean = LogBundle.saveLast(context)
+
+    /** 最近一次「保存日志」写入「下载/Buick Link＋」的展示路径；没保存过返回 null。 */
     fun lastBundleDownloadPath(): String? = LogBundle.lastDownloadDisplayPath()
 
-    /** Manifest 是否已声明 FileProvider（未声明时分享退化用 Downloads URI，导出不受影响）。 */
+    /** Manifest 是否已声明 FileProvider（分享必需；未声明时保存仍可用）。 */
     fun isBundleShareSupported(context: Context): Boolean = LogBundle.isShareSupported(context)
 
     private fun buildContent(

@@ -3,7 +3,6 @@
     <string name="ui_text_00bd3960fea8" formatted="false">"展开"</string>
     <string name="ui_text_01eeb5549c2b" formatted="false">"复制日志"</string>
     <string name="ui_text_02712916dee9" formatted="false">"清除日志"</string>
-    <string name="ui_text_062bb22ae1d0" formatted="false">"点击手机屏幕任意处恢复"</string>
     <string name="ui_text_10ebd92e1742" formatted="false">"应用横屏"</string>
     <string name="ui_text_111923ecbb8e" formatted="false">"应用超采样"</string>
     <string name="ui_text_1bd1b56a7c60" formatted="false">"回到桌面"</string>
@@ -30,14 +29,11 @@
     <string name="ui_text_953cf7bea5d3" formatted="false">"连接准备"</string>
     <string name="ui_text_9993504590b6" formatted="false">"dock 栏设置"</string>
     <string name="ui_text_a4dc401791ef" formatted="false">"默认地图"</string>
-    <string name="ui_text_a508dadda912" formatted="false">"常亮"</string>
     <string name="ui_text_bbaa9f06378b" formatted="false">"壁纸"</string>
     <string name="ui_text_bed7d33f8fad" formatted="false">"管理桌面应用"</string>
     <string name="ui_text_c9a7470e4465" formatted="false">"设备检测中"</string>
     <string name="ui_text_ced0f12524bb" formatted="false">"车机设置"</string>
     <string name="ui_text_e4f0a1550ede" formatted="false">"车机侧声音 · 开启"</string>
-    <string name="ui_text_e567246c092d" formatted="false">"立即假息屏"</string>
-    <string name="ui_text_e8e1835537c5" formatted="false">"假息屏"</string>
     <string name="ui_text_f436f568e69e" formatted="false">"最近日志 · 可复制反馈问题"</string>
     <string name="ui_text_f48d334495f6" formatted="false">"桌面"</string>
     <string name="ui_text_f88182fcd575" formatted="false">"进入"</string>

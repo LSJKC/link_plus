@@ -1161,8 +1161,6 @@ class DisplayPanelFragment : SettingsPanelFragment() {
                 TouchRouter.moveThrottleMs = ms.toLong()
             }
         }
-        // 触控节流入口已下线（用户不需要）：清掉历史节流值，避免沿用旧偏好
-        TouchRouter.moveThrottleMs = 0L
         refreshSelection = {
             syncingSelection = true
             try {
@@ -1188,105 +1186,8 @@ class DisplayPanelFragment : SettingsPanelFragment() {
             }
         }
         refreshScaleNote()
-        addCarLifeSafeMargin(view, ctx)
-        stripLegacyDisplaySections(view)
         // 动态滑条也在首次打开时采用所在显示屏的主题
         io.github.shaonialife.buicklinkplus.ui.AppearanceBindings
             .refresh(view)
-    }
-
-    /**
-     * 只保留一个「安全区边距」单值入口（写入 CarLifePrefs）。
-     *
-     * 该值由 CarLife 合成器按画布内缩使用，触摸坐标映射跟随同一安全区。
-     */
-    private fun addCarLifeSafeMargin(
-        root: View,
-        ctx: android.content.Context,
-    ) {
-        val body = (root as? android.widget.ScrollView)?.getChildAt(0) as? LinearLayout ?: return
-        val density = resources.displayMetrics.density
-        val card =
-            LinearLayout(ctx).apply {
-                orientation = LinearLayout.VERTICAL
-                val pad = (18 * density).toInt()
-                setPadding(pad, (14 * density).toInt(), pad, (14 * density).toInt())
-                setAppearanceBackground(if (isPhonePanel) R.drawable.bg_phone_card else R.drawable.bg_card)
-            }
-        card.addView(
-            TextView(ctx).apply {
-                text = "安全区边距（画布内缩，dp）"
-                textSize = 15f
-                setAppearanceTextColor(R.color.m3_on_surface)
-            },
-        )
-        card.addView(
-            TextView(ctx).apply {
-                text = "画面四周统一向内收缩；合成器按此留边，触摸坐标同步映射。0 表示不使用安全区。"
-                textSize = 12f
-                setAppearanceTextColor(R.color.m3_on_var)
-            },
-        )
-        val marginValue =
-            TextView(ctx).apply {
-                text = "${CarLifePrefs.safeMargin(ctx)} dp"
-                textSize = 12f
-                setAppearanceTextColor(R.color.m3_on_var)
-            }
-        val marginSeek =
-            SeekBar(ctx).apply {
-                max = CarLifePrefs.SAFE_MARGIN_MAX / 4
-                progress = CarLifePrefs.safeMargin(ctx) / 4
-            }
-        marginSeek.setOnSeekBarChangeListener(
-            object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(
-                    seekBar: SeekBar?,
-                    progress: Int,
-                    fromUser: Boolean,
-                ) {
-                    marginValue.text = "${progress * 4} dp"
-                }
-
-                override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
-
-                override fun onStopTrackingTouch(seekBar: SeekBar?) {
-                    val dp = (seekBar?.progress ?: 0) * 4
-                    CarLifePrefs.setSafeMargin(ctx, dp)
-                    hostToast("安全区边距已保存：$dp dp")
-                }
-            },
-        )
-        card.addView(marginSeek, LinearLayout.LayoutParams(-1, -2).apply { topMargin = (6 * density).toInt() })
-        card.addView(marginValue, LinearLayout.LayoutParams(-1, -2))
-        body.addView(card, LinearLayout.LayoutParams(-1, -2).apply { topMargin = (10 * density).toInt() })
-    }
-
-    /**
-     * 移除显示页里重复/下线的旧控件：触摸节流（高级微调卡）与四周边距旧控件。
-     *
-     * 布局文件不允许改，所以在绑定完成后从视图树移除；保留缩放/帧率/码率三个主设置。
-     */
-    private fun stripLegacyDisplaySections(root: View) {
-        val body = (root as? android.widget.ScrollView)?.getChildAt(0) as? LinearLayout ?: return
-        root.findViewById<View>(R.id.displayExtraControls)?.let { extras ->
-            (extras.parent as? android.view.ViewGroup)?.removeView(extras)
-        }
-        if (isPhonePanel) {
-            val toggle = root.findViewById<View>(R.id.phoneAdvancedToggle) ?: return
-            var section: View = toggle
-            while (section.parent !== body && section.parent is android.view.ViewGroup) {
-                section = section.parent as View
-            }
-            if (section.parent === body) body.removeView(section)
-            return
-        }
-        val throttle = root.findViewById<View>(R.id.throttleSeek) ?: return
-        val row = throttle.parent as? android.view.ViewGroup ?: return
-        val index = body.indexOfChild(row)
-        if (index < 0) return
-        if (index + 1 < body.childCount) body.removeViewAt(index + 1)
-        body.removeViewAt(index)
-        if (index - 1 >= 0) body.removeViewAt(index - 1)
     }
 }

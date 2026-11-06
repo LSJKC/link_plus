@@ -1,7 +1,6 @@
 package io.github.shaonialife.buicklinkplus.launcher.settings
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -20,10 +19,10 @@ class SettingsSearchTest {
         assertEquals(SettingsMenus.DISPLAY, SettingsMenus.search("码率").single().target)
         assertEquals(SettingsMenus.DISPLAY, SettingsMenus.search(" FPS ").single().target)
         assertEquals(SettingsMenus.DISPLAY, SettingsMenus.search("安全区 边距").single().target)
-        assertEquals(SettingsMenus.AUDIO, SettingsMenus.search("TTS 播报").single().target)
+        assertEquals(SettingsMenus.CARLIFE, SettingsMenus.search("TTS 播报").single().target)
         assertEquals(SettingsMenus.CARLIFE, SettingsMenus.search("端口 自检").single().target)
         assertEquals(SettingsMenus.CONNECTION, SettingsMenus.search("蓝牙 MAC").single().target)
-        assertEquals(SettingsMenus.APPEARANCE, SettingsMenus.search("壁纸 圆角").single().target)
+        assertEquals(SettingsMenus.APPEARANCE, SettingsMenus.search("车机外观").single().target)
         assertEquals(SettingsMenus.ABOUT, SettingsMenus.search("日志 导出").single().target)
         assertTrue(SettingsMenus.search("无法匹配的词").isEmpty())
         assertTrue(SettingsMenus.search("  ").isEmpty())
@@ -33,10 +32,10 @@ class SettingsSearchTest {
      * 六类页面顺序稳定，搜索目标都能解析到真实面板，旧桌面页不再可直达
      */
     @Test fun visibleCategoriesRetainLegacyTargets() {
-        assertEquals(listOf(105, 5, 104, 9, 100, 107), SettingsMenus.VISIBLE.map { it.id })
+        assertEquals(listOf(108, 105, 5, 104, 100, 107), SettingsMenus.VISIBLE.map { it.id })
         assertEquals(SettingsMenus.PERMISSIONS, SettingsMenus.itemOf(SettingsMenus.PERMISSIONS).id)
         SettingsMenus.SEARCH.forEach { assertEquals(it.target, SettingsMenus.itemOf(it.target).id) }
-        assertNull(SettingsMenus.directPhonePanel(SettingsMenus.LAYOUT))
-        assertNull(SettingsMenus.directPhonePanel(SettingsMenus.MAP))
+        assertEquals(SettingsMenus.DISPLAY, SettingsMenus.directPhonePanel(SettingsMenus.LAYOUT))
+        assertEquals(SettingsMenus.DEFAULT_MAP, SettingsMenus.directPhonePanel(SettingsMenus.MAP))
     }
 }

@@ -3,14 +3,16 @@
 > 工作副本：`F:\carplay\_newproj\linkplus_carlife`  
 > 分支：`carlife-port`  
 > 上游基线：[schemawisp/link_plus](https://github.com/schemawisp/link_plus) `51fb394`（Buick Link+，MIT，基于 cardeck）  
-> 当前版本：`0.0.9-carlife.1`（versionCode 158）  
-> 本文是目标、架构、实现要点、历史阶段与实车测试口径；功能与界面清单见 [PORT_MATRIX.md](PORT_MATRIX.md)，连接原理见 [carlife-mechanism.md](carlife-mechanism.md)。
+> 当前版本：`0.0.9-carlife.2`（versionCode 159）  
+> 本文是目标、架构、实现要点、历史阶段与实车测试口径；功能与界面清单见 [PORT_MATRIX.md](PORT_MATRIX.md)，连接原理见 [carlife-mechanism.md](carlife-mechanism.md)，原版功能审计见 [AUDIT_RESTORE.md](AUDIT_RESTORE.md)。
 
 ---
 
 ## 0. 一句话目标
 
 **本项目基于 [schemawisp/link_plus](https://github.com/schemawisp/link_plus)（Buick Link+，MIT）开发**：保留 link_plus 的蓝牙 iAP2 / AirPlay / VideoSender / AudioSender / 会话管理，在内容源位置增加 **CarLife**——手机 CarLife+ 以「无线连接」模式在本机监听 TCP，本应用作为车机端接入视频 H.264、音频与触摸，再经 link_plus 的 CarPlay 发送链路送到车机。已去掉内置无线 ADB 激活，瘦身 APK，提供实车测试包，并建立与上游的 GitHub 下游同步。
+
+**UI 原则（2026-11-07 用户要求）**：以 link_plus 原版为主，CarLife 只补原版没有的功能；原版好用的功能恢复原版形态（首页设计、常用入口、本机蓝牙 MAC、权限与后台、画面边距四滑块、原版壁纸、原版音频策略、日志分享/保存）。原版功能审计与恢复记录见 [AUDIT_RESTORE.md](AUDIT_RESTORE.md)。
 
 无需 root / ADB / Shizuku，细节见 [no-adb-model.md](no-adb-model.md)。
 
@@ -27,7 +29,9 @@ CarLife 协议/客户端/视频/音频部分使用了 [CarPToCarL](https://githu
 
 ### 2.1 已实现功能（待实车验证）
 
-视频（CarLife H.264 → CarPlay 画面）、画面合成（壁纸背景/安全区 contain/圆角）、媒体音频、TTS 导航播报、车机触摸回传、导航指引上行（0x5201/0x5202）、媒体 NowPlaying、封面（测试版）、HUD 广播、车机语音键、车机 GPS 回填、本机蓝牙地址、诊断日志与端口自检、壁纸（程序生成背景 + 用户自定义）、设置页。
+视频（CarLife H.264 → CarPlay 画面）、画面合成（壁纸背景/安全区 contain/圆角）、媒体音频（原版音频策略 + CarLife 音源）、TTS 导航播报、车机触摸回传、导航指引上行（0x5201/0x5202）、媒体 NowPlaying、封面（测试版）、HUD 广播、车机语音键、车机 GPS 回填、本机蓝牙地址、诊断日志与端口自检、原版壁纸（自选图片/校准/切片）、设置页（原版为主 + CarLife 增量）。
+
+界面按“以 link_plus 原版为主”恢复：首页原版设计 + CarLife/本机蓝牙 MAC 两行；设置顶层 CarLife/连接与设备/显示与画面/音频/外观与壁纸/帮助与诊断；显示页画面边距四滑块；音频页原版策略；原版壁纸；日志分享不落盘、保存才落盘。详见 [PORT_MATRIX.md](PORT_MATRIX.md) 界面总览与 [AUDIT_RESTORE.md](AUDIT_RESTORE.md)。
 
 详细实现位置、UI 入口与状态见 [PORT_MATRIX.md](PORT_MATRIX.md)。
 
@@ -38,6 +42,7 @@ CarLife 协议/客户端/视频/音频部分使用了 [CarPToCarL](https://githu
 - 有线 CarPlay；
 - iAP2 歌词字段（官方 0x5001 无歌词字段）；
 - 内置第三方壁纸图片（不随包分发第三方图片）；
+- 生成壁纸（已下线，恢复原版自选图片壁纸）；
 - 封面 file-transfer 与 field 0x001A（需要真车 k1 会话证据，暂不接入）。
 
 ### 2.3 适配范围
@@ -69,12 +74,13 @@ link_plus：SessionController → VideoSender（编码/发送） + AudioSender�
 ## 4. 实现要点
 
 1. **视频**：CarLife 码流由 `CarLifeVideoDecoder` 解码到 `VideoSender` 的编码器 Surface；真实编码尺寸以 SPS 为准，车机档位来自 AirPlay SETUP；
-2. **画面合成**：`CarLifeComposer` 用 EGL/OES 做壁纸 cover、安全区 contain、圆角（shader 内 SDF）；壁纸来源为程序生成背景或用户导入图片；
+2. **画面合成**：`CarLifeComposer` 用 EGL/OES 做壁纸 cover、安全区 contain、圆角（shader 内 SDF）；壁纸使用 link_plus 原版壁纸（自选图片/校准/切片，无生成壁纸、无内置第三方图片）；
 3. **音频**：媒体 9240 / TTS 9241 分别 ring，重采样到 48k stereo 16bit、1408B/352 帧，TTS 独立混音/duck；音频统一由 `AudioSender` 送出；
 4. **触摸**：车机触摸按最近一次合成 pane 映射到 CarLife 视频坐标，经 9340 控制帧回传；
 5. **导航**：CarLife 0x10030、AMap LinkSDK、通知文本与 HUD 广播归一成 HUD 快照，收到车机 0x5200 订阅后由 `Iap2SenderSession` 发送 0x5201/0x5202（maneuverState 用 u64，空数据不发）；
 6. **媒体 NowPlaying**：CarLife 0x10035/进度按车机 0x5000 订阅属性推送 iAP2 0x5001（album=0x0006，无歌词）；封面为测试版元数据，不发 field 0x001A；
-7. **其他**：HUD 广播接入、车机语音键 → CarLife VR、手机定位 → 0x18010、本机蓝牙地址手填、诊断日志导出、设置页六类页面。
+7. **其他**：HUD 广播接入、车机语音键 → CarLife VR、手机定位 → 0x18010、本机蓝牙地址（首页行 + 手填）、诊断日志与端口自检；
+8. **界面（原版为主）**：首页沿用 link_plus 原版（hero 连接状态、目标车机、连接准备、常用入口、画面与声音、音乐/导航/天气卡片）+ 显眼「CarLife」行与「本机蓝牙 MAC」行；首页无运行日志卡，兼容暗屏/立即假息屏卡已移除；设置顶层为 CarLife / 连接与设备 / 显示与画面 / 音频 / 外观与壁纸 / 帮助与诊断，原版重复入口隐藏不可达但面板类保留编译；显示页恢复画面边距左/上/右/下四滑块（仅向内收缩）；音频页恢复原版策略（自动 / 音质优先 / 兼容，兼容模式需录音+投屏授权）；壁纸恢复原版 `WallpaperActivity`/`WallpaperStore`；日志分享 ZIP 不落盘、只有「保存日志」写入「下载/Buick Link＋」；CarLife 页含引擎检测/端口自检/重连/日志诊断 + TTS/导航指引/壁纸背景/画面圆角/车机 GPS 五个开关。
 
 ## 5. 协议要点与实车测试经验（历史参考）
 
@@ -100,7 +106,10 @@ link_plus：SessionController → VideoSender（编码/发送） + AudioSender�
 | P1A 视频直出 | CarLife H.264 解码到 `VideoSender` 编码器 Surface | 完成 |
 | v0.2.0 全量功能 | 画面合成、音频/TTS、触摸、导航、NowPlaying、HUD/语音/GPS、设置页、APK 瘦身 | 已出测试包 |
 | v0.2.1 | NowPlaying/封面测试、HUD/语音/GPS、协议修复 | 已出测试包 |
-| v0.2.2 → 0.0.9-carlife | 设置入口补全、版本命名跟随上游、移除内置第三方壁纸图片 | 当前测试包版本 |
+| v0.2.2 → 0.0.9-carlife | 设置入口补全、版本命名跟随上游、移除内置第三方壁纸图片 | 已出测试包 |
+| 0.0.9-carlife.2 | UI 方向回退：以 link_plus 原版为主恢复首页/常用入口/蓝牙 MAC/权限与后台/画面边距四滑块/原版壁纸/原版音频策略/日志分享与保存；CarLife 只保留增量入口与五个开关 | 当前测试包版本（`0.0.9-carlife.2`，versionCode 159） |
+
+原版功能审计与恢复清单见 [AUDIT_RESTORE.md](AUDIT_RESTORE.md)（恢复审计）；界面总览见 [PORT_MATRIX.md](PORT_MATRIX.md) §0。
 
 ## 7. 权限模型
 
@@ -114,9 +123,10 @@ link_plus：SessionController → VideoSender（编码/发送） + AudioSender�
 | --- | --- | --- |
 | 连接 | 蓝牙 iAP2 + Wi-Fi + AirPlay 完成，无内置 ADB/开发者选项依赖 | 车机/手机/ROM/日志 |
 | 画面 | CarLife 画面完整，比例正确（合成后不变形/留壁纸），无绿屏/黑屏 | `CARLIFE: carlife connected`、`decoder out`、`fit` |
-| 音频媒体 | 音乐连续，无持续刺啦；切歌/暂停正常 | `audio`/`AUDIO` 日志 |
+| 音频媒体 | 音乐连续，无持续刺啦；切歌/暂停正常；三种音频策略（自动/音质优先/兼容）均验证；兼容模式需录音+投屏授权 | `audio`/`AUDIO` 日志 |
 | TTS | 导航播报可听，不覆盖媒体格式 | `TTS` 日志 |
 | 触摸 | 点击/滑动/长按准确；壁纸/letterbox 区不误触 | 触摸日志 |
+| 画面边距 | 显示页左/上/右/下四滑块仅向内收缩，下次连接生效 | 截图/日志 |
 | 导航 | 0x5200 后 0x5201/0x5202；无空 -1 帧；HUD 行出现 | `nav`/`5201` 日志 |
 | 媒体 NowPlaying | 车机媒体卡歌名/歌手/进度正确 | `0x5001`/`NowPlaying` 日志 |
 | 封面 | 元数据/日志正常；file-transfer 为测试版，不要求车机出现封面 | `artwork` 日志 |
@@ -128,9 +138,9 @@ link_plus：SessionController → VideoSender（编码/发送） + AudioSender�
 | 重连 | 断开后 10–30s 内可重连 | 日志 |
 | 稳定 | 30–60 分钟无解码泄漏/断流 | 日志/性能记录 |
 | 性能 | CPU/发热可接受，帧率目标 30/60 | 记录 |
-| 日志导出 | 应用内导出日志，含 carlife/airplay/audio/touch/nav | 日志文件 |
+| 日志导出 | 「帮助与诊断」分享日志（ZIP）不落盘、保存日志（ZIP）写入下载/Buick Link＋；日志含 carlife/airplay/audio/touch/nav | 日志文件 |
 
-**日志反馈方式**：应用内「设置 → 日志与关于 → 导出日志」导出完整日志，连同手机/车机型号、版本号、复现步骤提交（GitHub issue 或约定渠道）。
+**日志反馈方式**：应用内「设置 → 帮助与诊断」用「分享日志（ZIP）」直接分享（不落盘），或「保存日志（ZIP）」写入「下载/Buick Link＋」后附上；连同手机/车机型号、版本号、复现步骤提交（GitHub issue 或约定渠道）。
 
 ## 9. 风险与回滚
 
@@ -170,7 +180,7 @@ $env:JAVA_HOME='F:\carplay\tools\jdk17\jdk-17.0.20.1'
 ## 11. 发布与上游同步
 
 - 发布流程、tag/Release 命名、日志反馈方式见 [GITHUB_WORKFLOW.md](GITHUB_WORKFLOW.md)；
-- 版本命名跟随上游：`X.Y.Z-carlife`（当前 `0.0.9-carlife.1`，versionCode 158）；
+- 版本命名跟随上游：`X.Y.Z-carlife〔.n〕`（当前 `0.0.9-carlife.2`，versionCode 159）；
 - 上游同步：`upstream` 只 fetch，`main` 镜像上游，`carlife-port` 开发；推送前必须构建通过。
 
 ## 12. 来源与许可

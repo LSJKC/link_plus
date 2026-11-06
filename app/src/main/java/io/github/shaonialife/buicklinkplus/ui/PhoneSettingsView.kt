@@ -94,27 +94,31 @@ class PhoneSettingsView(
     /** 返回列表时读取已有偏好，不扫描应用 */
     private fun refreshSummaries() {
         val display = io.github.shaonialife.buicklinkplus.launcher.settings.DisplayPrefs
-        val carLifePrefs = io.github.shaonialife.buicklinkplus.launcher.settings.CarLifePrefs
         val values =
             mapOf(
+                SettingsMenus.CARLIFE to
+                    if (io.github.shaonialife.buicklinkplus.session.SessionController
+                            .isSessionRunning()
+                    ) {
+                        "已连接 · 可查看引擎状态/重连/日志诊断"
+                    } else {
+                        "未连接 · 先在手机打开 CarLife+ 无线连接"
+                    },
                 SettingsMenus.CONNECTION to (
                     io.github.shaonialife.buicklinkplus.bt.TargetDevicePrefs
                         .get(context)
                         ?.name ?: "未选择车辆"
                 ),
                 SettingsMenus.DISPLAY to "画质配置 ${display.scalePercent(context)}% · 目标 ${display.fps(context)} fps",
-                SettingsMenus.AUDIO to
-                    "音源${if (carLifePrefs.audioEnabled(context)) "开" else "关"} · " +
-                    "TTS${if (carLifePrefs.ttsEnabled(context)) "开" else "关"}",
-                SettingsMenus.CARLIFE to
-                    if (io.github.shaonialife.buicklinkplus.session.SessionController
-                            .isSessionRunning()
+                SettingsMenus.AUDIO to "音频策略：${io.github.shaonialife.buicklinkplus.audio.AudioPreference.read(context).title}",
+                SettingsMenus.APPEARANCE to
+                    if (io.github.shaonialife.buicklinkplus.ui.WallpaperStore
+                            .userWallpaperFile(context) != null
                     ) {
-                        "会话进行中"
+                        "已设置自定义壁纸"
                     } else {
-                        "尚未连接"
+                        "默认背景"
                     },
-                SettingsMenus.APPEARANCE to "内置壁纸与自定义壁纸",
                 SettingsMenus.ABOUT to "当前版本 ${io.github.shaonialife.buicklinkplus.BuildConfig.VERSION_NAME}",
             )
         summaries.forEach { (id, label) ->

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="phone_cellular_title">优先使用手机流量</string>
-    <string name="phone_cellular_hint">开启（推荐）：上网用手机流量，车机 Wi-Fi 只用于投屏；关闭：上网用车机热点。自动连接，无需手动设置，下次连接生效</string>
+    <string name="phone_cellular_hint">开启（推荐）：上网用手机流量，车机 Wi-Fi 只用于车机连接；关闭：上网用车机热点。自动连接，无需手动设置，下次连接生效</string>
 </resources>
