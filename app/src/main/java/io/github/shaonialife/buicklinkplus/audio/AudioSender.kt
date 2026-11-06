@@ -1,13 +1,7 @@
 package io.github.shaonialife.buicklinkplus.audio
 
-import android.media.AudioAttributes
-import android.media.AudioFormat
-import android.media.AudioPlaybackCaptureConfiguration
-import android.media.AudioRecord
-import android.media.projection.MediaProjection
 import io.github.shaonialife.buicklinkplus.airplay.AirPlayCrypto
 import io.github.shaonialife.buicklinkplus.airplay.TimingServer
-import io.github.shaonialife.buicklinkplus.util.Bg
 import java.io.IOException
 import java.net.DatagramPacket
 import java.net.DatagramSocket
@@ -22,19 +16,17 @@ import java.util.concurrent.atomic.AtomicBoolean
  * 每秒向 controlPort 发送 [AudioSyncPacket]，建立 RTP 与 NTP 的对应关系
  * 格式参考 catplay rtp_cipher_chacha 和 DiPlay AudioStream
  *
- * 两种数据来源：
- * - 默认：[start] 用 MediaProjection 的播放捕获（AudioPlaybackCapture）采集本机声音；
- * - 外部 PCM：[startExternal] + [feedExternalPcm]（CarLife 引擎 9240/9241 直通），
- *   不启动 MediaProjection 采集，复用同一套封包/加密/同步包/发送路径。
+ * **只保留外部 PCM 直通数据源**（CarLife 音频：媒体 9240 / TTS 9241 → [CarLifeAudioSink]
+ * 统一成 48kHz 立体声 1408B 实时包 → [startExternal] + [feedExternalPcm]）。原「本机播放 +
+ * MediaProjection 播放捕获」的兼容采集路径已删除：CarLife 音频来自引擎本地 TCP，
+ * **不需要屏幕录制/投屏授权，也不申请录音权限**。
  */
 class AudioSender(
     private val host: String,
     private val dataPort: Int,
     private val streamKey: ByteArray,
     private val log: (String) -> Unit,
-    /** 静音手机媒体音量（声音只从车机出）。null = 不做（测试用）。 */
-    private val context: android.content.Context? = null,
-    /** 采集采样率必须与 SETUP 协商结果一致，默认 48kHz */
+    /** 输出采样率必须与 SETUP 协商结果一致，默认 48kHz */
     private val sampleRate: Int = 48_000,
     /** 负载编码：PCM（type=100 通路）或 AAC-LC（type=102 通路）。 */
     private val codec: AudioCodec = AudioCodec.PCM,
@@ -58,10 +50,7 @@ class AudioSender(
         const val SYNC_INTERVAL_MILLIS = 1_000L
 
         private const val RTP_HEADER_LEN = 12
-        private const val TAG_SIZE = 16
         private const val NONCE_SIZE = 8
-
-        private const val READ_TIMEOUT_QUIET_MILLIS = 500L
 
         /** 小端 s16 → 大端 s16（每两字节换序）。CarPlay 线格式要求大端样本。 */
         fun bigEndianS16(source: ByteArray): ByteArray {
@@ -84,8 +73,6 @@ class AudioSender(
     private val resourceLock = Any()
     private var socket: DatagramSocket? = null
     private var syncSocket: DatagramSocket? = null
-    private var captureSource: AudioCaptureSource? = null
-    private var thread: Thread? = null
     private var syncThread: Thread? = null
 
     /** AAC-LC 编码器（仅 [AudioCodec.AAC_LC] 时创建）。 */
@@ -98,9 +85,8 @@ class AudioSender(
 
     @Volatile private var nonceCounter = 0L
 
-    /** 首个音频包标记（打完就清）；AAC 自检只跑一次。 */
+    /** 首个音频包标记（打完就清）。 */
     private var markerPending = true
-    private var selfChecked = false
 
     /** 每包/每帧对应的 PCM 字节数（PCM 通路=一包的负载；AAC 通路=一帧的输入）。 */
     private val framePcmBytes: Int
@@ -113,25 +99,21 @@ class AudioSender(
     /** RTP SSRC 固定为 0，参考 catplay prepare_header */
     private val ssrc = 0
 
-    /** 采集+推流统计（日志限流用）。 */
-    @Volatile private var packetsSent = 0L
-
-    @Volatile private var bytesSent = 0L
-    private var lastLogAt = 0L
-    private var readFailures = 0
-
-    @Volatile private var capturing = false
-
-    /** 外部 PCM 直通模式（CarLife）：不启动 MediaProjection 采集，数据由 [feedExternalPcm] 注入。 */
+    /** 外部 PCM 直通模式（CarLife）：数据由 [feedExternalPcm] 注入，不启动任何本机采集。 */
     @Volatile
     private var externalMode = false
 
-    /** 外部注入 PCM 的帧对齐累积缓冲（切满一帧就按采集路径封包/发送）。 */
+    /** 外部注入 PCM 的帧对齐累积缓冲（切满一帧就封包/发送）。 */
     private val externalBuffer = java.io.ByteArrayOutputStream()
 
     /** 最近一次外部注入真实 PCM 的时刻（uptimeMillis，诊断用）。 */
     @Volatile
     private var lastExternalFeedAt = 0L
+
+    /** 推流统计（会话日志用）。 */
+    @Volatile private var packetsSent = 0L
+
+    @Volatile private var bytesSent = 0L
 
     /** 外部注入累计包/字节/TTS 字节（诊断用）。 */
     private var externalPackets = 0L
@@ -145,130 +127,17 @@ class AudioSender(
     /** 当前是否为外部 PCM 直通模式（诊断/会话日志用）。 */
     val isExternalMode: Boolean get() = externalMode
 
-    /** 报告采集和发送阶段，静音或暂停不记为采集失败 */
+    /** 发送阶段摘要（不含任何本机采集/静音状态：CarLife 音频由引擎侧提供）。 */
     fun status(): String =
-        "采集：${
-            when {
-                externalMode -> "外部PCM直通（CarLife）"
-                capturing -> "运行中"
-                isRunning -> "启动中"
-                else -> "已停止"
-            }
-        }" +
+        "音频：${if (running.get()) "外部PCM直通（CarLife）" else "已停止"}" +
             " · 发送：$packetsSent 包 / ${bytesSent / 1024} KB · 同步：${syncState.status}"
 
-    @Volatile
-    private var sourceProjection: MediaProjection? = null
-
-    fun usesProjection(projection: MediaProjection): Boolean = sourceProjection === projection
-
-    private val muteToken = Any()
-
-    @Volatile private var muteError = ""
-    val phoneMuteStatus: String get() =
-        if (captureSource?.exclusive ==
-            true
-        ) {
-            "媒体导航独占路由"
-        } else {
-            muteError.ifEmpty { MediaMuteController.status(muteToken) }
-        }
-
     /**
-     * 启动音频采集和发送，优先服务采集，兼容方式需投屏授权
-     * 返回是否进入采集循环
+     * 车机侧音源状态文案（首页音频入口用）。
+     *
+     * 外部 PCM 直通不静音手机、也不走本机播放，因此没有「媒体独占路由/手机静音」状态。
      */
-    fun start(projection: MediaProjection?): Boolean {
-        if (!started.compareAndSet(false, true)) return running.get()
-        if (running.get()) return true
-        if (stopped.get()) return false
-        return try {
-            val client = DatagramSocket()
-            synchronized(resourceLock) {
-                if (stopped.get()) {
-                    client.close()
-                    return false
-                }
-                socket = client
-            }
-            client.connect(InetAddress.getByName(host), dataPort)
-
-            // 先启动 AAC 编码器，失败时就不继续采集
-            if (codec == AudioCodec.AAC_LC) {
-                val encoder = AacLcEncoder(sampleRate, CHANNELS, wrapAdts = adtsFrames, log = log)
-                if (!encoder.start()) {
-                    client.close()
-                    socket = null
-                    return false
-                }
-                synchronized(resourceLock) {
-                    if (stopped.get()) {
-                        encoder.stop()
-                        return false
-                    }
-                    aacEncoder = encoder
-                }
-            }
-
-            val source = createCaptureSource(projection)
-            synchronized(resourceLock) {
-                if (stopped.get()) {
-                    source.close()
-                    return false
-                }
-                captureSource = source
-                running.set(true)
-            }
-            log(
-                "AUDIO: 已启动（播放捕获 ${sampleRate}Hz 立体声 → $host:$dataPort，" +
-                    "通路=t$streamType/${codec.name}，" +
-                    if (codec == AudioCodec.AAC_LC) {
-                        "每包 1 个 AAC 帧（${AacLcEncoder.FRAME_SAMPLES} 采样" +
-                            (if (adtsFrames) "，ADTS 封装））" else "，裸帧））")
-                    } else {
-                        "每包 ${SAMPLES_PER_PACKET} 帧 PCM）"
-                    },
-            )
-
-            // 同步包线程先起：锚点越早建立，接收端越早能排播
-            startSyncLoop()
-
-            Thread(
-                {
-                    try {
-                        source.start()
-                        synchronized(resourceLock) {
-                            if (stopped.get()) return@Thread
-                            capturing = true
-                        }
-                    } catch (error: Exception) {
-                        log("AUDIO: 启动采集失败 - ${error.message}")
-                        stop()
-                        return@Thread
-                    }
-                    if (stopped.get()) return@Thread
-                    context?.takeIf { !source.exclusive }?.let { ctx ->
-                        runCatching { MediaMuteController.acquire(ctx, muteToken, log) { !stopped.get() } }
-                            .onFailure {
-                                muteError = "手机静音失败：" + it.message
-                                log("AUDIO: " + muteError)
-                            }
-                    }
-                    runCaptureLoop()
-                },
-                "audio-capture",
-            ).apply {
-                isDaemon = true
-                start()
-                thread = this
-            }
-            true
-        } catch (error: Exception) {
-            log("AUDIO: 启动失败 - ${error.message}")
-            stop()
-            false
-        }
-    }
+    val phoneMuteStatus: String get() = if (running.get()) "外部PCM直通（CarLife 引擎音源）" else ""
 
     /**
      * 启动**外部 PCM 直通模式**（CarLife 引擎音频 → RTP，**不启动 MediaProjection 采集**）。
@@ -336,13 +205,11 @@ class AudioSender(
         }
     }
 
-    /** 停止音频并恢复手机音量，可重复调用 */
+    /** 停止音频发送，可重复调用 */
     fun stop() {
         if (!stopped.compareAndSet(false, true)) return
         synchronized(resourceLock) {
             running.set(false)
-            runCatching { captureSource?.close() }
-            captureSource = null
             aacEncoder?.stop()
             aacEncoder = null
             runCatching { socket?.close() }
@@ -352,12 +219,6 @@ class AudioSender(
             syncState.stop()
             syncThread?.interrupt()
             syncThread = null
-            thread = null
-            context?.let { ctx ->
-                // 控制器在全局锁内核对采集状态，恢复先到或获取先到都不会遗留静音
-                Bg.run("media-mute-release") { MediaMuteController.release(ctx, muteToken, log) }
-            }
-            capturing = false
             externalMode = false
             externalBuffer.reset()
             if (externalPackets > 0L) {
@@ -365,11 +226,10 @@ class AudioSender(
             }
             lastExternalFeedAt = 0L
             log("AUDIO: 已停止（共发 $packetsSent 包 / ${bytesSent / 1024}KB）")
-            sourceProjection = null
         }
     }
 
-    // ---- 外部 PCM 直通：CarLife 引擎 PCM 注入 → 采集路径同一套封包/发送 ----
+    // ---- 外部 PCM 直通：CarLife 引擎 PCM 注入 → 同一套封包/加密/同步包/发送 ----
 
     /**
      * 直通模式下由外部注入一段 PCM（16bit 小端交织）。
@@ -419,7 +279,7 @@ class AudioSender(
         return ok
     }
 
-    /** 外部注入的 PCM 对齐到发送端格式（参考 CarPToCarL AudioSender.alignPcm 的移植）。 */
+    /** 外部注入的 PCM 对齐到发送端格式（参考 CarPToCarL AudioSender.alignPcm 的实现）。 */
     private fun alignExternalPcm(
         src: ByteArray,
         size: Int,
@@ -484,56 +344,6 @@ class AudioSender(
             log("AUDIO: 外部 PCM 首帧包已发送（每包 ${framePcmBytes}B，通路 t$streamType/${codec.name}）")
         }
         return true
-    }
-
-    /** 使用用户已授权的系统媒体采集方式（内置服务采集通道已随无线 ADB 激活移除） */
-    private fun createCaptureSource(projection: MediaProjection?): AudioCaptureSource {
-        context?.let { MediaMuteController.recover(it, log) }
-        check(!stopped.get()) { "音频会话已取消" }
-        checkNotNull(projection) { "请在手机端申请兼容声音授权，视频连接继续" }
-        val format =
-            AudioFormat
-                .Builder()
-                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                .setSampleRate(sampleRate)
-                .setChannelMask(AudioFormat.CHANNEL_IN_STEREO)
-                .build()
-        val captureContext = checkNotNull(context) { "缺少声音采集上下文" }
-        check(
-            captureContext.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) ==
-                android.content.pm.PackageManager.PERMISSION_GRANTED,
-        ) {
-            "请在手机端允许录音权限，视频连接继续"
-        }
-        val recorder =
-            AudioRecord
-                .Builder()
-                .setAudioPlaybackCaptureConfig(buildCaptureConfig(projection))
-                .setAudioFormat(format)
-                .setBufferSizeInBytes(framePcmBytes * 8)
-                .build()
-        if (recorder.state != AudioRecord.STATE_INITIALIZED) {
-            recorder.release()
-            error("系统声音采集初始化失败")
-        }
-        sourceProjection = projection
-        log("AUDIO: 采集来源=系统投屏授权，仅媒体、游戏及未知用途")
-        return ProjectionCapture(recorder)
-    }
-
-    /**
-     * 官方播放捕获仅支持媒体、游戏和未知用途，还受源应用捕获策略约束
-     */
-    private fun buildCaptureConfig(projection: MediaProjection): AudioPlaybackCaptureConfiguration {
-        val builder = AudioPlaybackCaptureConfiguration.Builder(projection)
-        listOf(
-            AudioAttributes.USAGE_MEDIA,
-            AudioAttributes.USAGE_GAME,
-            AudioAttributes.USAGE_UNKNOWN,
-        ).forEach { usage ->
-            runCatching { builder.addMatchingUsage(usage) }
-        }
-        return builder.build()
     }
 
     // ---- 音频同步包（RTP 时间戳 ↔ NTP，每秒一个） ----
@@ -611,115 +421,6 @@ class AudioSender(
         }
     }
 
-    // ---- 采集循环 → 封包发送 ----
-
-    private fun runCaptureLoop() {
-        val recorder = captureSource ?: return
-        val frameBytes = framePcmBytes
-        val frame = PcmFrameBuffer(frameBytes)
-        val pcm = frame.bytes
-        // 诊断抽样节拍：PCM 约 125 包/s（每 20s 一次）；AAC 约 47 帧/s
-        val diagnosticStride = if (codec == AudioCodec.AAC_LC) 600 else 1875
-        var audibleFrames = 0
-        var zeroSince = 0L
-        try {
-            while (running.get()) {
-                val read =
-                    try {
-                        recorder.read(pcm, frame.offset, frame.remaining)
-                    } catch (error: Exception) {
-                        log("AUDIO: 采集读取异常 - ${error.message}")
-                        break
-                    }
-                if (read == -1 && recorder.exclusive) break
-                if (read < 0) {
-                    readFailures++
-                    if (readFailures == 1 || readFailures % 100 == 0) {
-                        log("AUDIO: 采集错误码 $read（连续 $readFailures 次）")
-                    }
-                    if (readFailures > 500) break
-                    Thread.sleep(READ_TIMEOUT_QUIET_MILLIS)
-                    continue
-                }
-                if (read == 0) {
-                    Thread.sleep(READ_TIMEOUT_QUIET_MILLIS)
-                    continue
-                }
-                if (!frame.accept(read)) continue
-                readFailures = 0
-
-                val signal = AudioSampleStats.inspect(pcm, frameBytes)
-                audibleFrames = if (signal.peak > 0) audibleFrames + 1 else 0
-                val sampledAt = android.os.SystemClock.uptimeMillis()
-                if (signal.peak > 0) {
-                    zeroSince = 0L
-                } else if (zeroSince == 0L) {
-                    zeroSince = sampledAt
-                }
-
-                // 记录非零样本比例，区分没采到音频和车机没有播放
-                if (sequence < 3 || sequence % diagnosticStride == 0) {
-                    val playing =
-                        io.github.shaonialife.buicklinkplus.media.MediaSessionsState.nowPlaying
-                            ?.playing
-                    val content =
-                        when {
-                            signal.peak > 0 -> "存在非零采样，车机消费尚未确认"
-                            playing == false -> "播放器已暂停，零样本不能判为采集失败"
-                            playing == null -> "播放器状态未知，零样本原因待确认"
-                            sampledAt - zeroSince < 3_000 -> "等待播放内容，暂不判为采集异常"
-                            else -> "会话报告播放但持续无非零采样，需核对音频焦点、路由及播放捕获许可"
-                        }
-                    log(
-                        "AUDIO: 采集样本 seq=$sequence 非零${signal.nonZeroPercent}% 峰值=${signal.peak}（$content）",
-                    )
-                    if (signal.peak == 0 && playing == true && sampledAt - zeroSince >= 3_000) {
-                        io.github.shaonialife.buicklinkplus.launcher.VirtualLauncher
-                            .recordInteractionDiagnostics("播放器报告播放但持续零采样")
-                    }
-                }
-
-                // PCM 通路：采一段 = 发一包；AAC 通路：喂一帧 PCM，编码器可能吐出 0~N 帧
-                val payloads: List<ByteArray> =
-                    if (codec == AudioCodec.AAC_LC) {
-                        val encoder = aacEncoder ?: break
-                        encoder.encode(pcm, frameBytes)
-                    } else {
-                        listOf(pcm)
-                    }
-                if (payloads.isEmpty()) continue
-
-                // 等待连续非零输入再自检 AAC，PCM 通路不使用 AAC 解码器
-                if (!selfChecked && codec == AudioCodec.AAC_LC && audibleFrames >= 3) {
-                    selfChecked = true
-                    verifyEncodedFrame(payloads.first())
-                }
-
-                var sendFailed = false
-                for (payload in payloads) {
-                    if (!sendPayload(payload)) {
-                        sendFailed = true
-                        break
-                    }
-                }
-                if (sendFailed) break
-                val now = android.os.SystemClock.uptimeMillis()
-                if (now - lastLogAt >= 30_000L) {
-                    lastLogAt = now
-                    log(
-                        "AUDIO: 推流中（累计 $packetsSent 包，${bytesSent / 1024}KB，" +
-                            "seq=$sequence ts=$timestamp）",
-                    )
-                }
-            }
-        } catch (error: Throwable) {
-            // 后台线程未捕获异常会杀死整个进程——音频异常绝不允许冒泡
-            log("AUDIO: 采集线程异常退出 - ${error.message}")
-        } finally {
-            stop()
-        }
-    }
-
     /** 封包 + 发送一包（同步更新 seq/ts/nonce 游标）。返回 false 表示链路已断。 */
     private fun sendPayload(payload: ByteArray): Boolean {
         val wire = sealPacket(payload, sequence, timestamp, nonceCounter, markerPending)
@@ -736,37 +437,6 @@ class AudioSender(
         } catch (error: IOException) {
             log("AUDIO: UDP 发送失败 - ${error.message}")
             false
-        }
-    }
-
-    /** 用平台解码器把首帧解回 PCM，记录峰值（后台线程，不阻塞推流）。 */
-    private fun verifyEncodedFrame(frame: ByteArray) {
-        val payload = frame.copyOf()
-        Thread(
-            {
-                try {
-                    val result = AacLcEncoder.decodePeak(payload, sampleRate, CHANNELS)
-                    if (result == null) {
-                        log("AUDIO: 自检 = 本机未解出采样（${payload.size}B），结果未知，继续推流")
-                        return@Thread
-                    }
-                    val (peak, samples) = result
-                    log(
-                        "AUDIO: 自检 = ${payload.size}B 本机解码 $samples 个样本，峰值 $peak" +
-                            if (peak > 0) {
-                                "（本机负载可解码，后续加密、传输及车机消费仍需核验）"
-                            } else {
-                                "（本帧解码为零，单帧结果不能认定整个编码器故障）"
-                            },
-                    )
-                } catch (error: Exception) {
-                    log("AUDIO: 自检解码异常 - ${error.message}")
-                }
-            },
-            "audio-selfcheck",
-        ).apply {
-            isDaemon = true
-            start()
         }
     }
 

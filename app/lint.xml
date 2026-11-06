@@ -4,4 +4,19 @@
     <issue id="AndroidGradlePluginVersion">
         <ignore path="../gradle/wrapper/gradle-wrapper.properties" />
     </issue>
+    <!--
+      CarLife 版已下线 link_plus 原桌面/权限页等大量 UI，旧 layout/strings/anim 仍被保留的
+      死代码引用，暂不做资源级删除；只忽略「未使用资源」提示，避免阻塞打包。后续统一清理
+      死代码与资源后再恢复该检查。
+    -->
+    <issue id="UnusedResources" severity="ignore" />
+    <!-- 仅适配手机（arm64/armeabi-v7a），不面向 ChromeOS，无需 x86 二进制翻译支持 -->
+    <issue id="ChromeOsAbiSupport" severity="ignore" />
+    <!--
+      设置页/首页仍是代码内拼中文文案（本项目只发布中文版），暂不抽到资源；
+      等后续做多语言时再统一整改。
+    -->
+    <issue id="SetTextI18n" severity="ignore" />
+    <!-- 日志包记录 dataDir/cacheDir 可用空间用 usableSpace 是刻意选择（不需要可分配空间语义） -->
+    <issue id="UsableSpace" severity="ignore" />
 </lint>

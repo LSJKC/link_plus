@@ -12,7 +12,7 @@ import io.github.shaonialife.buicklinkplus.render.DisplayGeometry
 import io.github.shaonialife.buicklinkplus.render.FloatingPanelLayout
 import java.io.File
 
-/** 保存用户壁纸，没有图片时使用纯色背景 */
+/** 保存用户壁纸；没有用户图片时使用代码生成的默认壁纸，保证画面不再是纯黑底 */
 object WallpaperStore {
     private const val BACKGROUND_COLOR = 0xFF161326.toInt()
     private const val USER_FILE = "wallpaper.jpg"
@@ -53,14 +53,63 @@ object WallpaperStore {
         return File(context.filesDir, name).takeIf { it.exists() && it.length() > 0 }
     }
 
-    /** 后台解码用户图片，读取失败时使用纯色背景 */
+    /**
+     * 后台解码用户图片；**没有用户壁纸时生成默认壁纸**（[GeneratedWallpapers.DEFAULT_INDEX]），
+     * 不再回退 1x1 纯色底。通用调用方如需按画布比例精确预览，用 [previewBitmap] / [generatedDefault]。
+     */
     fun decode(
         context: Context,
         maxSize: Int = 2560,
-    ): Bitmap? = decodeUser(context, maxSize) ?: defaultBackground()
+    ): Bitmap? = decodeUser(context, maxSize) ?: generatedDefault16x9(context, maxSize)
 
-    /** 预览和正式画面共用同一底色 */
-    internal fun defaultBackground(): Bitmap = createBitmap(1, 1).apply { eraseColor(BACKGROUND_COLOR) }
+    /** 默认生成壁纸的通用尺寸（16:9），供没有画布信息的通用解码场景使用。 */
+    private fun generatedDefault16x9(
+        context: Context,
+        maxSize: Int,
+    ): Bitmap? {
+        val longest = maxSize.coerceIn(32, 1920)
+        val width = longest
+        val height = (longest * 9 / 16).coerceAtLeast(2)
+        return GeneratedWallpapers.render(context.applicationContext, GeneratedWallpapers.DEFAULT_INDEX, width, height)
+    }
+
+    /** 直接生成指定尺寸的默认壁纸（编辑器“恢复默认”预览、设置页默认项、合成器兜底用）。 */
+    fun generatedDefault(
+        context: Context,
+        width: Int,
+        height: Int,
+    ): Bitmap? =
+        GeneratedWallpapers.render(
+            context.applicationContext,
+            GeneratedWallpapers.DEFAULT_INDEX,
+            width.coerceAtLeast(2),
+            height.coerceAtLeast(2),
+        )
+
+    /**
+     * 编辑器/设置页预览：有用户壁纸时解码用户图；否则按目标画布宽高比生成默认壁纸。
+     *
+     * @param aspectRatio 目标画布宽/高（如 1972x520 ≈ 3.79）；非法值按 16:9 处理
+     */
+    fun previewBitmap(
+        context: Context,
+        maxSize: Int,
+        aspectRatio: Float,
+    ): Bitmap? {
+        decodeUser(context, maxSize)?.let { return it }
+        val ratio = if (aspectRatio.isFinite() && aspectRatio in 0.2f..8f) aspectRatio else 16f / 9f
+        val longest = maxSize.coerceIn(64, 2048)
+        val width: Int
+        val height: Int
+        if (ratio >= 1f) {
+            width = longest
+            height = (longest / ratio).toInt().coerceAtLeast(2)
+        } else {
+            height = longest
+            width = (longest * ratio).toInt().coerceAtLeast(2)
+        }
+        return GeneratedWallpapers.render(context.applicationContext, GeneratedWallpapers.DEFAULT_INDEX, width, height)
+    }
 
     // ---- 壁纸明暗检测：车机明暗主题跟随壁纸亮度（浅壁纸深字、深壁纸浅字） ----
 
@@ -230,7 +279,70 @@ object WallpaperStore {
         uri: Uri,
     ): Boolean = save(context, uri, false, WallpaperCalibration())
 
-    /** 清除壁纸并重置画面位置 */
+    /**
+     * 写入一张现成位图（代码生成壁纸/内置素材用），语义同旧版 saveBuiltin：
+     * 压缩落盘 → 一次提交图片引用与居中校准 → 删除旧图 → 通知一次变更。
+     *
+     * 调用方（[GeneratedWallpapers.applyAsync]）在后台线程调用；成功后用户壁纸即为该位图，
+     * [resetToDefault] 可恢复默认生成壁纸。
+     */
+    @Synchronized
+    // 后台事务同步落盘，成功后才释放旧资源；与 [save] 保持同一套 SharedPreferences 语义
+    @android.annotation.SuppressLint("UseKtx", "ApplySharedPref")
+    fun saveBitmap(
+        context: Context,
+        bitmap: Bitmap,
+    ): Boolean {
+        if (bitmap.width <= 0 || bitmap.height <= 0 || bitmap.isRecycled) return false
+        val prefs = context.getSharedPreferences("wallpaper_calibration", Context.MODE_PRIVATE)
+        val previous = userWallpaperFile(context)
+        val previousImage = prefs.getString("image", USER_FILE)
+        val previousValue = calibration(context)
+        var pending: File? = null
+        var committing = false
+        return try {
+            val destination = File(context.filesDir, "wallpaper-${java.util.UUID.randomUUID()}.jpg")
+            pending = destination
+            java.io.FileOutputStream(destination).use { output ->
+                check(bitmap.compress(Bitmap.CompressFormat.JPEG, 92, output)) { "壁纸压缩失败" }
+                output.fd.sync()
+            }
+            val normalized = WallpaperCalibration()
+            committing = true
+            check(
+                prefs
+                    .edit()
+                    .putString("image", destination.name)
+                    .putInt("zoom", normalized.zoomPercent)
+                    .putInt("x", normalized.xPermille)
+                    .putInt("y", normalized.yPermille)
+                    .commit(),
+            ) { "无法保存壁纸配置" }
+            // 新配置已落盘，旧图片不再被配置引用后才清理
+            if (previous != null && previous.name != destination.name) previous.delete()
+            markChanged()
+            true
+        } catch (_: Exception) {
+            if (committing) {
+                // commit 失败仍可能修改内存值，恢复原引用后才能删除未提交图片
+                runCatching {
+                    prefs
+                        .edit()
+                        .putString("image", previousImage)
+                        .putInt("zoom", previousValue.zoomPercent)
+                        .putInt("x", previousValue.xPermille)
+                        .putInt("y", previousValue.yPermille)
+                        .commit()
+                }
+            }
+            pending?.delete()
+            false
+        }
+    }
+
+    /**
+     * 清除用户壁纸并恢复默认生成壁纸（[GeneratedWallpapers.DEFAULT_INDEX]），同时重置画面位置
+     */
     fun resetToDefault(context: Context): Boolean = save(context, null, true, WallpaperCalibration())
 
     // ---- 桌面切片：全流画布的 aspectFill 位图（GridActivity/DockActivity 共用） ----
@@ -403,17 +515,28 @@ object WallpaperStore {
             if (canvasCacheVersion == requestedVersion) return cached
         }
         if (canvasCacheVersion != requestedVersion) canvasCache.evictAll()
-        val source = decode(context, maxOf(canvasWidth, canvasHeight) * 2) ?: return null
+        val userImage = decodeUser(context, maxOf(canvasWidth, canvasHeight) * 2)
         val bitmap = createBitmap(canvasWidth, canvasHeight, Bitmap.Config.ARGB_8888)
         val canvas = android.graphics.Canvas(bitmap)
-        canvas.drawColor(android.graphics.Color.BLACK)
-        val bounds = calibration(context).bounds(source.width, source.height, canvasWidth.toFloat(), canvasHeight.toFloat())
-        canvas.drawBitmap(
-            source,
-            null,
-            android.graphics.RectF(bounds.left, bounds.top, bounds.right, bounds.bottom),
-            android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG),
-        )
+        if (userImage == null) {
+            // 没有用户壁纸：整幅画布直接绘制默认生成壁纸（保持画布原比例，避免 cover 裁掉主体或露黑底）
+            val generated = generatedDefault(context, canvasWidth, canvasHeight)
+            if (generated != null) {
+                canvas.drawBitmap(generated, 0f, 0f, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
+                generated.recycle()
+            } else {
+                canvas.drawColor(BACKGROUND_COLOR)
+            }
+        } else {
+            canvas.drawColor(android.graphics.Color.BLACK)
+            val bounds = calibration(context).bounds(userImage.width, userImage.height, canvasWidth.toFloat(), canvasHeight.toFloat())
+            canvas.drawBitmap(
+                userImage,
+                null,
+                android.graphics.RectF(bounds.left, bounds.top, bounds.right, bounds.bottom),
+                android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG),
+            )
+        }
         // 解码期间若切换壁纸，本次结果仍归属于旧版本，下次读取会重新生成
         canvasCacheVersion = requestedVersion
         canvasCache.put(key, bitmap)

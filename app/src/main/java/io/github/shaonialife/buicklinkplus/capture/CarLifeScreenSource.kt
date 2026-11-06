@@ -1,6 +1,6 @@
 /* P1A CarLife 内容源：CarLife H.264 解码后直出到 VideoSender 的编码器输入 Surface。
- * CarLife 客户端协议/解码逻辑来自 CarPToCarL（MIT, Copyright (c) 2026 lizhihua）与旧工程
- * hybrid63 的 CarLifeBridge/解码移植；本文件只做 link_plus 的 ScreenSource 生命周期与线程编排。 */
+ * CarLife 客户端协议/解码逻辑参考自 CarPToCarL（MIT, Copyright (c) 2026 lizhihua）与历史参考实现
+ * 的 CarLifeBridge/解码逻辑；本文件只做 link_plus 的 ScreenSource 生命周期与线程编排。 */
 package io.github.shaonialife.buicklinkplus.capture
 
 import android.content.Context

@@ -4,7 +4,11 @@ import android.content.Context
 import androidx.core.content.edit
 
 /**
- * 用户音频策略，修改后在下次连接时读取
+ * 用户音频策略，修改后在下次连接时读取。
+ *
+ * **CarLife 音频已改为外部 PCM 直通（引擎 9240/9241 → AudioSender.startExternal），本策略
+ * 不再参与任何会话路径**。保留类仅为 MainActivity（旧「音频策略」UI）与 AirPlayClient
+ * （媒体档位识别 `isMediaChannel`）编译兼容；activation-ui 清理旧 UI 后应删除本文件。
  */
 enum class AudioPreference(
     val title: String,

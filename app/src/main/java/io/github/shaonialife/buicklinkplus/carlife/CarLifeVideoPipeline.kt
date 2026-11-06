@@ -1,6 +1,6 @@
 /* Adapted from CarPToCarL carlife/CarLifeHijack.kt (MIT, Copyright (c) 2026 lizhihua), commit 7b729fb:
  *   SPS/PPS 缓存、裸 IDR 前置 CSD、码流真实尺寸回调的处理顺序；
- * 以及旧工程 hybrid63 解码移植版 carlife/CarLifeVideoPipeline.java（GOP 缓存按 P1A 直出需要简化为 CSD 维护）。 */
+ * 以及历史参考实现的解码版本 carlife/CarLifeVideoPipeline.java（GOP 缓存按 P1A 直出需要简化为 CSD 维护）。 */
 package io.github.shaonialife.buicklinkplus.carlife
 
 /**

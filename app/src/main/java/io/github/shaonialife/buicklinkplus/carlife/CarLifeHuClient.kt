@@ -1,4 +1,4 @@
-// Ported from CarPToCarL carlife/CarLifeHuClient.kt (MIT, Copyright (c) 2026 lizhihua), commit 7b729fb.
+// Adapted from CarPToCarL carlife/CarLifeHuClient.kt (MIT, Copyright (c) 2026 lizhihua), commit 7b729fb.
 package io.github.shaonialife.buicklinkplus.carlife
 
 import io.github.shaonialife.buicklinkplus.util.LogThrottle
@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * 手机上的 CarLife 引擎（`com.baidu.carlife.honor` 等）在「无线连接」态会监听 7 个
  * TCP 端口。本类从 **127.0.0.1** 连上去扮演车机，完成握手后即可收到手机推送的
- * H.264 码流——这就是「本地劫持原生 CarLife」的数据面。
+ * H.264 码流——这就是「本机接入原生 CarLife」的数据面。
  *
  * 握手顺序（2026-10-23 实机验证，缺一步都不出画面）：
  * ```
@@ -61,7 +61,7 @@ class CarLifeHuClient(
     /**
      * TTS 通道（9241）的裸 PCM —— **导航播报就走这里**。
      *
-     * 2026-10-27 真机日志定谳：0x40003 带 1280B 负载 = 导航播报 PCM；旧实现把它归到
+     * 2026-10-27 真机日志定谳：0x40003 带 1280B 负载 = 导航播报 PCM；历史实现把它归到
      * 「暂不处理」直接丢掉，于是「放音乐有声、开导航没声」。TTS 与媒体是两条独立流，
      * 采样率也可能不同（TTS 常见 16k 单声道），所以必须各自带格式送进发送端重采样。
      */
@@ -92,7 +92,7 @@ class CarLifeHuClient(
      * 0.2.9 方案 A：引擎的编码器按此值配（申请 30 就只给约 20~30 帧），想跟手就拉到 60。
      * 引擎确认时会回它自己实际跑的值（见 MD_VIDEO_ENC_INIT）。
      *
-     * 0.2.10 实验：字节码实证引擎 `Recorder.changeFrameRate` 上限是 60（非旧结论 30），
+     * 0.2.10 实验：协议实测引擎 `Recorder.changeFrameRate` 上限是 60（非旧结论 30），
      * 所以 [requestHigherFrameRate] 会**直接发 98316 带 fps=60**（不再跳过），
      * 验证 `setOutputTime50(1000/fps)` 能否把输出节拍从 50ms 拉到 16ms。
      */
@@ -122,8 +122,8 @@ class CarLifeHuClient(
      * （2026-11-04 奥迪 3810：申请 1412×654@60，回 1280×720@20，重发多少次都是 720p）。
      *
      * 默认 1280×720 是引擎白名单内的通用档（非标尺寸会 `reset2Default` 降回 720p，
-     * 逆向 `VideoResolution.getResolution` 实证）。真实车机画布由
-     * [io.github.shaonialife.buicklinkplus.carlife.CarLifeHijack] 从「上次连过的车机」缓存里
+     * 协议实测 `VideoResolution.getResolution`）。真实车机画布由
+     * [io.github.shaonialife.buicklinkplus.capture.CarLifeScreenSource] 从「上次连过的车机」缓存里
      * 取来传进来——因为 CarLife 端口先开、AirPlay `/info` 后到，等知道了画布再申请已经晚了。
      */
     private val initialWidth: Int = 1280,
@@ -908,8 +908,8 @@ class CarLifeHuClient(
             }
 
             0x10030 -> {
-                // MSG_CMD_NAVI_NEXT_TURN_INFO：CarLife 手机内置导航的转向 HUD（旧工程
-                // com.turtlelink.carlife.CarLifeHuClient 65584 分支）。
+                // MSG_CMD_NAVI_NEXT_TURN_INFO：CarLife 手机内置导航的转向 HUD（历史参考实现的
+                // 65584 分支）。
                 // protobuf：1 action、2 nextTurn、3 roadName、4 total、5 remain（字段 6 icon 不用）。
                 val nextTurn = CarLifeNav.parseNextTurn(payload)
                 if (nextTurn == null) {
@@ -931,7 +931,7 @@ class CarLifeHuClient(
             }
 
             0x1003B -> {
-                // MSG_CMD_NAVI_INFO：导航链路的辅助信息，旧工程也只记日志、不参与 HUD。
+                // MSG_CMD_NAVI_INFO：导航链路的辅助信息，历史参考实现也只记日志、不参与 HUD。
                 if (naviLog.allow("navi-info")) {
                     log(
                         "CARLIFE: NAVI_INFO 0x1003B ${payload.size}B " +
@@ -1067,7 +1067,7 @@ class CarLifeHuClient(
      *
      * 98311 里的 fps 字段引擎只回显不生效；真正生效的是这条。
      *
-     * 2026-10-24 第四轮逆向**纠正**：旧结论「3..30 硬判定」是错的——字节码铁证
+     * 2026-10-24 第四轮协议实测**纠正**：旧结论「3..30 硬判定」是错的——实测数据
      * `Recorder.changeFrameRate` 的 clamp 是 `3..60`，且 `mDestFrameInterval = 1000/fps`、
      * `setOutputTime50(1000/fps)` 直接拿这个值做输出节拍。所以 fps=60 时
      * `mDestFrameInterval = 16ms`，理论上能把输出节拍拉到 60fps。
@@ -1922,8 +1922,8 @@ class CarLifeHuClient(
     /**
      * 音频包类型 → 可读名（日志用）。
      *
-     * 参考工程里这是 `CarLifeAudioSink.kt` 的顶层 `internal fun`；P1A 只移植客户端核心，
-     * 先作为私有成员内联（逻辑/字符串原样），避免与后续音频移植的同名顶层函数重复声明。
+     * 参考工程里这是 `CarLifeAudioSink.kt` 的顶层 `internal fun`；P1A 只保留客户端核心，
+     * 先作为私有成员内联（逻辑/字符串原样），避免与后续音频实现的同名顶层函数重复声明。
      */
     private fun carLifeAudioTypeName(type: Int): String =
         when (type) {

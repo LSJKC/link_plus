@@ -25,8 +25,6 @@ object ConnectionPreflight {
         LOCATION_ENABLED("Android 12 位置服务", "打开位置设置"),
         TARGET("已选择且已配对的目标车机", "选择目标车机"),
         IDENTITY("本机蓝牙身份", "重新检查身份"),
-        AUDIO_PERMISSION("声音捕获权限", "申请声音权限"),
-        PROJECTION("声音捕获的投屏授权", "申请投屏权限"),
     }
 
     data class Check(
@@ -47,7 +45,13 @@ object ConnectionPreflight {
         fun describe(): String = checks.joinToString("\n") { "${if (it.ready) "✓" else "○"} ${it.requirement.title}" }
     }
 
-    /** 只读取当前状态 */
+    /**
+     * 只读取当前状态。
+     *
+     * @param requireAudio 旧参数：CarLife 音频走引擎外部 PCM，不需要录音权限/投屏授权，
+     *   已不再产生任何检查项；保留仅为现有调用点编译兼容。
+     */
+    @Suppress("UNUSED_PARAMETER")
     @android.annotation.SuppressLint("MissingPermission")
     fun inspect(
         context: Context,

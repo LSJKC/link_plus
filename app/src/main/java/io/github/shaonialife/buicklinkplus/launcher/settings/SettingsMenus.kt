@@ -6,8 +6,7 @@ import io.github.shaonialife.buicklinkplus.R
 /**
  * 手机与车机共用的设置菜单。
  *
- * CarLife 成为唯一内容源后，link_plus 原桌面相关面板（桌面应用/超采样/横屏/侧栏/
- * 地图分屏/官方车载应用/仪表盘音乐组件）全部下线，只保留六类页面：
+ * CarLife 作为唯一内容源后只保留六类页面：
  * 连接与设备、显示与画面、音频、CarLife、外观与壁纸、日志与关于。
  */
 object SettingsMenus {
@@ -46,11 +45,11 @@ object SettingsMenus {
     val VISIBLE =
         listOf(
             Item(CONNECTION, "连接与设备", "目标车机、网络、本机蓝牙地址", R.drawable.ic_wifi),
-            Item(DISPLAY, "显示与画面", "分辨率、帧率、码率、安全区、圆角", R.drawable.ic_menu_display),
-            Item(AUDIO, "音频", "CarLife 音源、TTS 播报、音量与通道状态", R.drawable.ic_speaker),
-            Item(CARLIFE, "CarLife", "引擎连接、端口自检、重连与诊断", R.drawable.ic_screen_rotation),
-            Item(APPEARANCE, "外观与壁纸", "内置壁纸与壁纸编辑器", R.drawable.ic_wallpaper),
-            Item(ABOUT, "日志与关于", "日志导出、版本与免责声明", R.drawable.ic_doc),
+            Item(DISPLAY, "显示与画面", "分辨率、帧率、码率、安全区边距", R.drawable.ic_menu_display),
+            Item(AUDIO, "音频", "CarLife 音源、TTS 播报、手机媒体音量", R.drawable.ic_speaker),
+            Item(CARLIFE, "CarLife", "引擎、端口自检、重连、HUD/GPS、媒体状态", R.drawable.ic_screen_rotation),
+            Item(APPEARANCE, "外观与壁纸", "壁纸背景、画面圆角、壁纸编辑器", R.drawable.ic_wallpaper),
+            Item(ABOUT, "日志与关于", "日志导出/分享、版本与免责声明", R.drawable.ic_doc),
         )
 
     /**
@@ -79,11 +78,11 @@ object SettingsMenus {
                 it.desc,
                 when (it.id) {
                     CONNECTION -> "蓝牙 WiFi 热点 车机 MAC 地址 网络"
-                    DISPLAY -> "清晰度 画质 分辨率 码率 帧率 安全区 圆角 壁纸背景 fps dpi"
-                    AUDIO -> "声音 音源 TTS 导航播报 音量 通道"
-                    CARLIFE -> "引擎 端口 自检 重连 诊断 7240 8240"
-                    APPEARANCE -> "壁纸 背景 图片"
-                    ABOUT -> "日志 导出 版本 免责声明 许可"
+                    DISPLAY -> "清晰度 画质 分辨率 码率 帧率 安全区 边距 fps dpi"
+                    AUDIO -> "声音 音源 TTS 导航播报 媒体音量 通道"
+                    CARLIFE -> "引擎 端口 自检 重连 诊断 HUD GPS 媒体 封面 7240 8240"
+                    APPEARANCE -> "壁纸 背景 圆角 图片"
+                    ABOUT -> "日志 导出 分享 ZIP 版本 免责声明 许可"
                     else -> "权限 授权 省电 自启动"
                 },
             )

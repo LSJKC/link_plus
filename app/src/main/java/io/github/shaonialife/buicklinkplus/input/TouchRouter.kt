@@ -95,7 +95,7 @@ object TouchRouter {
 
     /**
      * CarLife 本地内容源的触摸 sink（P3）：非 null = 当前画面来源是 CarLife，
-     * 所有触摸改走 CarLife 9340 触摸通道，不再走虚拟屏/shell 注入路径。
+     * 所有触摸改走 CarLife 9340 触摸通道，不再走本机虚拟屏/系统注入路径。
      *
      * 接线由 SessionController 在创建/退役 `CarLifeScreenSource` 时调用
      * [setCarLifeSink] / [clearCarLifeSink] 完成；未接入时保持既有路径不变。
@@ -111,13 +111,13 @@ object TouchRouter {
     fun setGeometry(value: DisplayGeometry) {
         geometry = value
         safeGesture.reset()
-        // CarLife 已接入时同步触摸映射窗格（编码流坐标域 + 原版安全区语义）
+        // CarLife 已接入时同步触摸映射窗格（编码流坐标域 + 内容层安全区语义）
         carLifeSink?.let { refreshCarLifeViewport(it) }
     }
 
     /**
      * 接线：CarLife 内容源成为当前画面来源时调用；传 null（或 [clearCarLifeSink]）解除，
-     * 触摸回到既有虚拟屏/shell 路由（现已降级为空操作）。
+     * 触摸回到既有的本机路由（现已降级为空操作）。
      *
      * 调用时机建议（SessionController）：`CarLifeScreenSource.attach` 成功后 set，
      * `retireSession`/`TouchRouter.reset` 之前 clear。

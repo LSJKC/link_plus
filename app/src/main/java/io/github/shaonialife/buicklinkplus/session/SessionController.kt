@@ -306,17 +306,6 @@ object SessionController {
     @android.annotation.SuppressLint("StaticFieldLeak")
     var audioSender: AudioSender? = null
 
-    /** 只停止使用失效授权的原音频会话 */
-    @Synchronized
-    fun onProjectionStopped(projection: android.media.projection.MediaProjection) {
-        val sender = audioSender ?: return
-        if (!sender.usesProjection(projection)) return
-        appendLog("AUDIO: 系统投屏授权停止，关闭本轮采集并恢复手机媒体；视频链路继续保留")
-        sender.stop()
-        if (audioSender === sender) audioSender = null
-        phaseHint = "音频投屏授权已被系统停止，请在手机重新授权"
-    }
-
     @Volatile
     var currentClient: AirPlayClient? = null
 
@@ -345,13 +334,6 @@ object SessionController {
     var audioEnabledForSession: Boolean = false
 
     /**
-     * 连接前保存的用户音频策略，本会话期间修改设置不改变正在运行的通道
-     */
-    @Volatile
-    var audioPreference: io.github.shaonialife.buicklinkplus.audio.AudioPreference =
-        io.github.shaonialife.buicklinkplus.audio.AudioPreference.AUTO
-
-    /**
      * 展示实际网络，不把进程热点绑定误认为系统上网路径
      */
     fun networkStatus(): String = wifiConnector?.status() ?: "投屏：未连接 · 系统网络尚未初始化"
@@ -359,9 +341,9 @@ object SessionController {
     /** 分别展示投屏和互联网状态，不包含热点参数 */
     fun networkSnapshot(): WifiCarPlayConnector.Status? = wifiConnector?.statusSnapshot()
 
-    /** 分别展示采集、发送和车机反馈 */
+    /** 分别展示发送和车机反馈 */
     fun audioStatus(): String {
-        val sender = audioSender ?: return "采集：未启动 · 发送：未启动 · 车机反馈：未确认"
+        val sender = audioSender ?: return "音频：未启动 · 发送：未启动 · 车机反馈：未确认"
         return sender.status() + " · 车机反馈：" + (currentClient?.audioConsumptionStatus ?: "未确认") + " · 扬声器播放：未由本机确认"
     }
 
@@ -560,7 +542,6 @@ object SessionController {
     fun disconnect(context: Context) {
         connectCancelled = true
         sessionStarting.cancel()
-        val hadProjection = CarPlayService.mediaProjection != null
         pendingEndpointUpdate = null
         retireSession(reason = "用户断开或取消")
         // 用户断开时关闭 BT socket，让阻塞读取及时退出
@@ -575,13 +556,8 @@ object SessionController {
         endpointBrowser?.stop()
         wifiConnector?.release()
         boundCarSsid = null
-        if (hadProjection) {
-            // Android 14+：MediaProjection 与保活服务（mediaProjection FGS 类型）绑定，
-            // 停服务会连带失效授权——下次连接需重新点「申请投屏权限」
-            appendLog("已手动断开并停止保活服务（常亮已恢复）；投屏授权已随服务停止失效，下次连接如需声音请重新申请")
-        } else {
-            appendLog("已手动断开并停止保活服务（常亮已恢复）")
-        }
+        // CarLife 音频走引擎 9240/9241 外部 PCM，不需要投屏/录音授权，断开后无需重新授权。
+        appendLog("已手动断开并停止保活服务（常亮已恢复）")
     }
 
     /** 结束上一代会话，释放编码器、虚拟屏和链路资源 */
@@ -655,24 +631,6 @@ object SessionController {
         "采样经过时间=${android.os.SystemClock.elapsedRealtime()}ms ${sessionStarting.diagnostics()} " +
             "会话=${System.identityHashCode(currentClient)} 内容源=${sourceDiagnostics()} " +
             "地图=${VirtualLauncher.mapDiagnostics()} 音频=${audioStatus()} 上次结束=$lastSessionEnd"
-
-    /** 会话已建立且投影就绪、但音频尚未启动时，动态补启（投影授权晚于连接的场景）。 */
-    @Synchronized
-    fun maybeStartAudioNow(context: Context) {
-        val client =
-            currentClient ?: run {
-                appendLog("MODE: 投屏已就绪（当前无会话——下次连接时自动启用音频）")
-                return
-            }
-        val secret = currentSharedSecret
-        if (secret == null) {
-            appendLog("MODE: 明文会话（未配对）无共享密钥——不补启音频")
-            return
-        }
-        if (audioSender?.isRunning == true) return
-        appendLog("MODE: 会话进行中，动态补启音频通道…")
-        startAudioChannel(context, client, secret, currentAudioHost)
-    }
 
     /** 收到热点凭据后绑定 WiFi 并广播 ctrl，供车机邀请后下发 0x4301 */
     fun onWifiCredentials(wifi: Iap2SenderSession.WifiConfiguration) {
@@ -1199,7 +1157,12 @@ object SessionController {
     // ---- 以下方法体自 MainActivity 原样迁入（会话逻辑不依赖 Activity）----
 
     /**
-     * 按用户选择协商音频，启动播放采集和 RTP 加密推流
+     * 按用户选择协商音频档位，启动 **CarLife 外部 PCM → RTP 加密推流**。
+     *
+     * CarLife 音频来自引擎 9240（媒体）/ 9241（TTS）本地 TCP，由 CarLifeAudioSink 统一成
+     * 48kHz 立体声 1408B 包后经 [AudioSender.startExternal] 发送；**不需要 MediaProjection
+     * 投屏授权，也不需要录音权限**。只有「用户开启车机侧声音」且设置里 CarLife 音源/TTS
+     * 至少一个开启时才建立通道，否则整条音频 SETUP 跳过（仅推视频）。
      *
      * @return 音频通道是否已启动，供调用方决定是否补发 RECORD
      */
@@ -1230,9 +1193,6 @@ object SessionController {
             appendLog("AUDIO: 无接收端可用地址，跳过音频通道")
             return false
         }
-        // CarLife 内容源的音频由引擎 9240/9241 本地 TCP 提供，走 AudioSender 外部 PCM 模式，
-        // 不依赖 MediaProjection / 录音授权；只有遗留的采集路径才需要 projection。
-        val carLifeExternalAudio = currentScreenSource is CarLifeScreenSource
         return try {
             // 车机身份 → 只用于「本车机哪些音频档位踩过雷」的持久化记忆。
             val identity = client.receiverIdentity()
@@ -1247,23 +1207,17 @@ object SessionController {
             }
             val candidates =
                 client.audioCandidates(
-                    preferCompat =
-                        audioPreference == io.github.shaonialife.buicklinkplus.audio.AudioPreference.COMPATIBILITY,
+                    // CarLife 音频只用外部 PCM：媒体档优先，不再读取旧「兼容」策略。
+                    preferCompat = false,
                 )
-            val ordered =
-                io.github.shaonialife.buicklinkplus.audio.AudioPreference.order(
-                    candidates,
-                    AudioProfileMemory.order(candidates, entry),
-                    audioPreference,
-                )
+            val ordered = AudioProfileMemory.order(candidates, entry)
             if (ordered.isEmpty()) {
                 appendLog("AUDIO: 没有可用音频档位（候选=${candidates.map { it.label }}）——仅推视频")
                 return false
             }
             appendLog(
                 "AUDIO: 音频档位候选=${ordered.map { it.label }}" +
-                    "（策略=${audioPreference.title}；本车机记忆：${AudioProfileMemory.describe(entry)}；" +
-                    "封装=${tuning.detail}）",
+                    "（本车机记忆：${AudioProfileMemory.describe(entry)}；封装=${tuning.detail}）",
             )
             // SETUP 失败不会扰动会话（车机只是不接这条流的请求），所以本会话内就把候选
             // 试完，不必等下一次连接。这一点对当前场景很关键：102/AAC-LC 与 100/PCM 是
@@ -1302,7 +1256,6 @@ object SessionController {
                     dataPort = audio.dataPort,
                     streamKey = audio.streamKey,
                     log = { line -> appendLog(line) },
-                    context = context.applicationContext,
                     sampleRate = audio.sampleRate,
                     codec = profile.codec,
                     streamType = profile.streamType,
@@ -1311,13 +1264,9 @@ object SessionController {
                     controlPort = audio.controlPort,
                 )
             audioSender = sender
-            val started =
-                if (carLifeExternalAudio) {
-                    appendLog("AUDIO: 外部 PCM 直通模式（CarLife 引擎音频，不启动 MediaProjection 采集）")
-                    sender.startExternal()
-                } else {
-                    sender.start(CarPlayService.mediaProjection)
-                }
+            // CarLife 音频固定外部 PCM 直通：不需要 MediaProjection/录屏/录音授权。
+            appendLog("AUDIO: 外部 PCM 直通模式（CarLife 引擎 9240/9241，不启动 MediaProjection 采集）")
+            val started = sender.startExternal()
             if (!started) {
                 audioSender = null
                 activeAudioProfile = null

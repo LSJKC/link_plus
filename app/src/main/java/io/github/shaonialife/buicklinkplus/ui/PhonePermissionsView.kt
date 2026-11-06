@@ -20,7 +20,6 @@ import androidx.core.content.edit
 import androidx.core.view.isNotEmpty
 import io.github.shaonialife.buicklinkplus.R
 import io.github.shaonialife.buicklinkplus.media.MediaListenerService
-import io.github.shaonialife.buicklinkplus.service.CarPlayService
 import io.github.shaonialife.buicklinkplus.session.ConnectionPreflight
 
 /** 权限页展示当前状态，授权和设置跳转交给宿主 */
@@ -38,7 +37,6 @@ class PhonePermissionsView(
         BACKGROUND,
         NOTIFICATIONS,
         MEDIA_ACCESS,
-        AUDIO,
         SIGNAL,
         SLEEP_HELP,
         DIM_NOW,
@@ -135,13 +133,7 @@ class PhonePermissionsView(
             R.string.phone_permissions_media,
             R.string.phone_permissions_media_hint,
         )
-        addRow(
-            R.id.permissionOptionalGroup,
-            Action.AUDIO,
-            R.drawable.ic_speaker,
-            R.string.phone_permissions_audio,
-            R.string.phone_permissions_audio_hint,
-        )
+
         compatSwitch = findViewById(R.id.permissionCompatSwitch)
         addRow(
             R.id.permissionOptionalGroup,
@@ -272,14 +264,7 @@ class PhonePermissionsView(
             if (media) R.string.phone_permissions_allowed else R.string.phone_permissions_missing,
             if (media) true else null,
         )
-        val audio =
-            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED &&
-                CarPlayService.mediaProjection != null
-        status(
-            Action.AUDIO,
-            if (audio) R.string.phone_permissions_allowed else R.string.phone_permissions_audio_missing,
-            if (audio) true else null,
-        )
+
         syncing = true
         status(
             Action.SIGNAL,

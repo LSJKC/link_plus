@@ -807,7 +807,7 @@ class Iap2SenderSession(
      *
      * 首选「本链路收到 0x5200 订阅」（固件语义）；但真车证据显示订阅可能走另一条 iAP2 链路
      * （AirPlay 虚拟链路），BT 链路收不到——此时若车机在识别帧（0x1D01 参数 7）明确声明
-     * 可接收 0x5201，就按旧工程行为放行（旧工程就是从 BT 链路直接发 0x5201，早于订阅 4s+）。
+     * 可接收 0x5201，就按历史实车行为放行（历史实车就是从 BT 链路直接发 0x5201，早于订阅 4s+）。
      * 车机未声明能力清单时仍严格等 0x5200。
      */
     private fun navSendAllowed(): Boolean {
@@ -815,7 +815,7 @@ class Iap2SenderSession(
         val declared = accessoryDeclaresReceive(ROUTE_GUIDANCE_UPDATE) == true
         if (declared && !navGateLogged) {
             navGateLogged = true
-            log("iap2 导航更新：本链路未收到 0x5200 订阅，但车机识别帧声明可收 0x5201——按可收清单放行（旧工程行为）")
+            log("iap2 导航更新：本链路未收到 0x5200 订阅，但车机识别帧声明可收 0x5201——按可收清单放行（历史实车行为）")
         }
         return declared
     }

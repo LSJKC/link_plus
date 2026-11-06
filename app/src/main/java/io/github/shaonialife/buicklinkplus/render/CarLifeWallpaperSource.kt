@@ -2,6 +2,7 @@ package io.github.shaonialife.buicklinkplus.render
 
 import android.content.Context
 import android.graphics.Bitmap
+import io.github.shaonialife.buicklinkplus.ui.GeneratedWallpapers
 import io.github.shaonialife.buicklinkplus.ui.WallpaperStore
 import io.github.shaonialife.buicklinkplus.util.Bg
 
@@ -108,8 +109,12 @@ class CarLifeWallpaperSource(
             height = canvasHeight
         }
         Bg.run("carlife-wallpaper") {
+            // WallpaperStore 无用户壁纸时会返回生成壁纸；这里再兜一层，避免任何情况下回黑底
             val bitmap =
                 runCatching { WallpaperStore.aspectFillCanvas(appContext, width, height) }.getOrNull()
+                    ?: runCatching {
+                        GeneratedWallpapers.render(appContext, GeneratedWallpapers.DEFAULT_INDEX, width, height)
+                    }.getOrNull()
             var deliver: ((Bitmap?) -> Unit)? = null
             synchronized(lock) {
                 if (started && generation == generationSnapshot) {
@@ -117,7 +122,7 @@ class CarLifeWallpaperSource(
                 }
             }
             if (bitmap == null) {
-                log("CARLIFE-COMPOSER: 壁纸加载为空，合成器使用纯色底")
+                log("CARLIFE-COMPOSER: 壁纸加载/生成失败，合成器使用纯色底")
             } else {
                 log("CARLIFE-COMPOSER: 壁纸来源已加载 ${bitmap.width}x${bitmap.height}（画布 ${width}x$height）")
             }

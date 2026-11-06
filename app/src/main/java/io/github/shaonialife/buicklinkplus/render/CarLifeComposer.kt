@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * P1B CarLife 合成器：壁纸背景 + 安全区 contain + 圆角裁剪（对应原版龟壳 d9 的合成语义）。
+ * P1B CarLife 合成器：壁纸背景 + 安全区 contain + 圆角裁剪（对应历史参考实现 d9 的合成语义）。
  *
  * 输入是 CarLife 解码器输出 Surface（[inputSurface]，内部用 SurfaceTexture 转成 OES 纹理）；
  * 输出是 VideoSender 的编码器输入 Surface（构造参数 [output]，EGL window surface）。
@@ -32,7 +32,7 @@ import java.util.concurrent.atomic.AtomicReference
  * 1. 纯色底（0xFF161326，即 link_plus 默认壁纸底色）清屏；
  * 2. 壁纸按 cover 居中铺满整幅画布（可选，见 [setWallpaper]；不设置时只显示纯色底）；
  * 3. CarLife 视频按码流宽高比 **contain** 在车机安全区 [DisplayGeometry.content] 内，不变形，
- *    左右/上下留壁纸边（对应原版 `CarLifeBridge.publishFit` 的等比放入算法）；
+ *    左右/上下留壁纸边（对应历史参考实现 `CarLifeBridge.publishFit` 的等比放入算法）；
  * 4. 视频四边形按 [cornerRadiusPx] 做圆角裁剪（shader 内 SDF 抗锯齿，默认 17px 可调）；
  * 5. `eglSwapBuffers` 提交给编码器。
  *
@@ -40,7 +40,7 @@ import java.util.concurrent.atomic.AtomicReference
  * [targetFps] 上限继续画心跳帧，避免编码器断粮。[updateLayout] / [setWallpaper] /
  * [targetFps] / [cornerRadiusPx] 可在任意线程调用，实际 GL 操作只在 GL 线程执行。
  *
- * 与原版 d9 字段语义对应：`hyL/hyR/hyB/hyT` = contain 后视频窗格在画布窗口坐标（左下原点）的
+ * 与历史参考实现 d9 字段语义对应：`hyL/hyR/hyB/hyT` = contain 后视频窗格在画布窗口坐标（左下原点）的
  * 左/右/下/上边界；`hyRad` = 圆角半径（画布像素）。本类用 [paneInCanvas] 暴露同一窗格
  * （左上原点），P3 触摸映射可直接复用。
  *
@@ -71,7 +71,7 @@ class CarLifeComposer(
         }
 
     /**
-     * 视频圆角半径（画布像素），0 = 直角。原版 d9 的 `hyRad` 约 16~17px，
+     * 视频圆角半径（画布像素），0 = 直角。历史参考实现 d9 的 `hyRad` 约 16~17px，
      * 默认 [DEFAULT_CORNER_RADIUS_PX]；运行中可改。
      */
     @Volatile
@@ -274,7 +274,7 @@ class CarLifeComposer(
     // ---- 布局/contain 计算 ----
 
     /**
-     * contain 算法与原版 `CarLifeBridge.publishFit` 一致：安全区内按码流宽高比等比放入并居中，
+     * contain 算法与历史参考实现 `CarLifeBridge.publishFit` 一致：安全区内按码流宽高比等比放入并居中，
      * 剩余空间留给壁纸（不变形）。码流尺寸未知时铺满安全区。
      */
     private fun containPane(
@@ -784,7 +784,7 @@ class CarLifeComposer(
     companion object {
         private const val TAG = "CarLifeComposer"
 
-        /** 视频圆角半径默认值（画布像素），对应原版 d9 `hyRad` 的 16~17px 观感。 */
+        /** 视频圆角半径默认值（画布像素），对应历史参考实现 d9 `hyRad` 的 16~17px 观感。 */
         const val DEFAULT_CORNER_RADIUS_PX = 17f
 
         private const val THREAD_NAME = "carlife-composer"

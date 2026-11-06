@@ -1,4 +1,4 @@
-// Ported from CarPToCarL carlife/CarLifeProtocolTouchTest.kt (MIT, Copyright (c) 2026 lizhihua), commit 7b729fb.
+// Adapted from CarPToCarL carlife/CarLifeProtocolTouchTest.kt (MIT, Copyright (c) 2026 lizhihua), commit 7b729fb.
 package io.github.shaonialife.buicklinkplus.carlife
 
 import org.junit.Assert.assertArrayEquals

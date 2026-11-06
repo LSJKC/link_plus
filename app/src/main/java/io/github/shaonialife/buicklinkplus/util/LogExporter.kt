@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import io.github.shaonialife.buicklinkplus.session.SessionController
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -72,6 +73,39 @@ object LogExporter {
             null
         }
     }
+
+    // ---- 日志包（ZIP + 分享）：一个压缩包带应用/设备/CarLife 引擎/设置/日志 ----
+
+    /**
+     * 生成完整日志包 ZIP（cacheDir/log-bundles/carlife-logs-<yyyyMMdd-HHmmss>.zip），
+     * 并另存一份到「下载/Buick Link＋」（用户不用去 cache 里翻，也兼容无 FileProvider 的分享兜底）。
+     *
+     * 内含 app.txt / device.txt / carlife-engine.txt / settings.txt / README.txt、
+     * logs/current.log（本次启动历史）与 logs/ 下 *.log（历史文件日志），详见 [LogBundle]。
+     * 生成失败返回 null。含本机端口探测（最多约 1.5s），建议后台线程调用。
+     */
+    fun exportBundle(context: Context): File? = LogBundle.export(context)
+
+    /** 分享已生成的日志包（FileProvider content URI；未声明 provider 时退化为 Downloads URI）。 */
+    fun shareBundle(
+        context: Context,
+        file: File,
+    ): Boolean = LogBundle.share(context, file)
+
+    /** 最近一次生成的日志包；没有返回 null。 */
+    fun latestBundle(context: Context): File? = LogBundle.latestBundle(context)
+
+    /** 分享最近一次日志包（没有会先导出一个）；返回是否已发起分享。 */
+    fun shareLastBundle(context: Context): Boolean = LogBundle.shareLast(context)
+
+    /** 一键「导出并分享」：生成 ZIP + 另存 Downloads + 尽力拉起分享。返回是否导出成功。 */
+    fun exportAndShare(context: Context): Boolean = LogBundle.exportAndShare(context)
+
+    /** 最近一次导出到「下载/Buick Link＋」的展示路径；没有返回 null。 */
+    fun lastBundleDownloadPath(): String? = LogBundle.lastDownloadDisplayPath()
+
+    /** Manifest 是否已声明 FileProvider（未声明时分享退化用 Downloads URI，导出不受影响）。 */
+    fun isBundleShareSupported(context: Context): Boolean = LogBundle.isShareSupported(context)
 
     private fun buildContent(
         context: Context,

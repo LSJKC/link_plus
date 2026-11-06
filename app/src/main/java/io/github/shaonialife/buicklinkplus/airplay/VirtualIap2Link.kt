@@ -757,7 +757,7 @@ class VirtualIap2Link(
      */
     private fun maybeRespondControlCsmLocked(frame: Iap2Csm.Frame) {
         // P4 导航：真车（Buick E2LB）的 0x5200/0x5203 订阅从 AirPlay 虚拟 iAP2 链路进来，
-        // 而 0x5201/0x5202 由 BT 会话下发（复刻 hybrid63 行为）。这里把订阅状态注入 BT 会话，
+        // 而 0x5201/0x5202 由 BT 会话下发（与历史实车行为一致）。这里把订阅状态注入 BT 会话，
         // 让 Iap2SenderSession 的发送闸门放行；帧本身仍交给后续逻辑处理。
         if (frame.messageId == Iap2MessageIds.START_ROUTE_GUIDANCE_UPDATES ||
             frame.messageId == STOP_ROUTE_GUIDANCE_UPDATES

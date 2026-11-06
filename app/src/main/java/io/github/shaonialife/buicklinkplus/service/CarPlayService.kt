@@ -21,11 +21,13 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import io.github.shaonialife.buicklinkplus.MainActivity
 import io.github.shaonialife.buicklinkplus.R
-import io.github.shaonialife.buicklinkplus.session.SessionController
-import io.github.shaonialife.buicklinkplus.util.Bg
 import io.github.shaonialife.buicklinkplus.util.DebugFileLog
 
-/** 连接期间的前台保活服务，会话逻辑由 SessionController 管理 */
+/**
+ * 连接期间的前台保活服务（「已连接设备」类型），会话逻辑由会话控制器管理。
+ *
+ * 不持有/申请 MediaProjection：CarLife 音频来自引擎 9240/9241 外部 PCM，无需投屏授权。
+ */
 class CarPlayService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
@@ -166,73 +168,18 @@ class CarPlayService : Service() {
         flags: Int,
         startId: Int,
     ): Int {
-        // 首次仅启用设备连接类型，已有投影时保留投影类型，重复启动不得先降级再升级
-        // 没有有效授权时也不能直接使用清单中的全部前台类型
-        val projectionType =
-            if (mediaProjection != null) android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION else 0
+        // CarLife 音频走引擎 9240/9241 外部 PCM，不需要 MediaProjection/投屏授权；
+        // 前台服务只需「已连接设备」类型（不再声明/升级 mediaProjection 类型）。
         androidx.core.app.ServiceCompat.startForeground(
             this,
             NOTIFICATION_ID,
             buildNotification(),
-            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or projectionType,
+            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
         )
         acquireLocks()
         logPowerState("前台服务启动")
         if (Build.VERSION.SDK_INT >= 34) fileLog("SVC: 当前系统可能将高性能 Wi-Fi 请求降级为低延迟锁，持锁状态不等于系统保证息屏网络不休眠")
-        // 授权结果在（用户刚确认投屏）时：升级前台类型再创建投影（try/catch 兜底不崩）
-        if (pendingProjectionResult != null) {
-            upgradeToProjection()
-            takeProjection()
-        } else if (mediaProjection != null) {
-            upgradeToProjection()
-        }
         return START_STICKY
-    }
-
-    private fun takeProjection() {
-        val (code, data) = pendingProjectionResult ?: return
-        pendingProjectionResult = null
-        try {
-            val manager =
-                getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
-            val projection =
-                manager.getMediaProjection(code, data) ?: run {
-                    fileLog("SVC: 投屏授权已失效，无法创建音频投影")
-                    return
-                }
-            // Android 14+：createVirtualDisplay 前必须注册回调（资源管理强制）
-            projection.registerCallback(
-                object : android.media.projection.MediaProjection.Callback() {
-                    override fun onStop() {
-                        if (mediaProjection === projection) mediaProjection = null
-                        Bg.run("projection-stopped") {
-                            SessionController.onProjectionStopped(projection)
-                        }
-                        // 关键诊断：授权丢失会导致音频/镜像不可用（此前只写 logcat，HKS 加密看不到）
-                        fileLog("SVC: MediaProjection 被系统停止（onStop）——音频/镜像需重新授权")
-                    }
-                },
-                android.os.Handler(android.os.Looper.getMainLooper()),
-            )
-            mediaProjection = projection
-            fileLog("SVC: MediaProjection 就绪（投影创建成功）")
-        } catch (error: Exception) {
-            fileLog("SVC: getMediaProjection 失败 - ${error.message ?: error.javaClass.simpleName}")
-        }
-    }
-
-    private fun upgradeToProjection() {
-        try {
-            androidx.core.app.ServiceCompat.startForeground(
-                this,
-                NOTIFICATION_ID,
-                buildNotification(),
-                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
-                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION,
-            )
-        } catch (error: Exception) {
-            fileLog("SVC: 升级 mediaProjection FGS 类型失败 - ${error.message}")
-        }
     }
 
     override fun onDestroy() {
@@ -245,16 +192,11 @@ class CarPlayService : Service() {
         }
         if (networkRegistered) runCatching { getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(networkCallback) }
         releaseLocks()
-        // Android 14+：MediaProjection 与前台的 mediaProjection 类型绑定——
-        // 保活服务停止（如用户点「断开连接」）时系统会连带停止投影。
-        fileLog(
-            "SVC: onDestroy（保活服务停止）mediaProjection=" +
-                (if (mediaProjection != null) "仍在（即将被系统回收）" else "null"),
-        )
+        fileLog("SVC: onDestroy（保活服务停止）")
         super.onDestroy()
     }
 
-    /** 投影生命周期等关键事件：logcat + 文件双写（HKS 环境下文件是唯一可读通道）。 */
+    /** 保活服务关键事件：logcat + 文件双写（HKS 环境下文件是唯一可读通道）。 */
     private fun fileLog(message: String) {
         android.util.Log.i("CarPlayService", message)
         DebugFileLog
@@ -264,14 +206,6 @@ class CarPlayService : Service() {
     companion object {
         private const val CHANNEL_ID = "carplay_connection"
         private const val NOTIFICATION_ID = 1
-
-        /** 镜像模式：授权后由 MainActivity 写入；服务重声明 FGS 类型后方可创建虚拟屏。 */
-        @Volatile
-        var mediaProjection: android.media.projection.MediaProjection? = null
-
-        /** 暂存投屏授权，Android 14 起先升级前台服务类型，再获取 MediaProjection */
-        @Volatile
-        var pendingProjectionResult: Pair<Int, Intent>? = null
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, CarPlayService::class.java))

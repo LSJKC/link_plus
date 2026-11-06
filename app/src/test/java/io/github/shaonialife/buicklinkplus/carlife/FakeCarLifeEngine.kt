@@ -1,4 +1,4 @@
-// 仅 JVM 单元测试使用的假 CarLife+ 引擎（非生产代码，无移植来源）。
+// 仅 JVM 单元测试使用的假 CarLife+ 引擎（非生产代码，无外部来源）。
 package io.github.shaonialife.buicklinkplus.carlife
 
 import java.io.DataInputStream

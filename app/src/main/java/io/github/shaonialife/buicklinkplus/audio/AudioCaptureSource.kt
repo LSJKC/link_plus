@@ -7,7 +7,12 @@ import io.github.shaonialife.buicklinkplus.compat.ICarInput
 import java.io.Closeable
 
 /**
- * 发送器只消费同格式的立体声 PCM，采集来源不改变线上封装
+ * 旧「本机采集」数据源抽象（系统投屏播放捕获 / 内置服务管道）。
+ *
+ * **CarLife 音频不再使用本机采集**：引擎 9240/9241 直接推 PCM，经
+ * [io.github.shaonialife.buicklinkplus.carlife.CarLifeAudioSink] → AudioSender 外部 PCM 发送，
+ * 不需要 MediaProjection/录音权限。本文件整体废弃，仅为 androidTest（ShellCapture 取消语义）
+ * 与遗留引用保留编译兼容；等测试迁移后删除。
  */
 internal interface AudioCaptureSource : Closeable {
     val exclusive: Boolean
@@ -22,7 +27,7 @@ internal interface AudioCaptureSource : Closeable {
 }
 
 /**
- * 原系统授权采集保留在应用进程
+ * 原系统授权采集保留在应用进程（已废弃：CarLife 音频不再需要 MediaProjection 采集）。
  */
 internal class ProjectionCapture(
     private val recorder: AudioRecord,
@@ -55,7 +60,11 @@ internal class ProjectionCapture(
     }
 }
 
-/** 管道和服务凭据绑定同一会话，旧发送器不停止新采集 */
+/**
+ * 管道和服务凭据绑定同一会话，旧发送器不停止新采集。
+ *
+ * 已废弃：CarLife 音频不再走内置服务采集管道；仅为 androidTest（取消语义）保留。
+ */
 internal class ShellCapture(
     private val service: ICarInput,
 ) : AudioCaptureSource {

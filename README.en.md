@@ -1,8 +1,8 @@
 # Buick Link +
 
-An Android sender for compatible wireless CarPlay receivers: it streams phone CarLife+ video/audio and routes receiver touch input back to CarLife. Android 12 or later is required; root, developer options, wireless debugging and ADB are not required.
+An Android sender for compatible wireless CarPlay receivers: it streams phone CarLife+ video/audio and routes receiver touch input back to CarLife. This project is **built on [schemawisp/link_plus](https://github.com/schemawisp/link_plus) (Buick Link+, MIT)** and adds a CarLife content source on top of its Bluetooth iAP2 / AirPlay / VideoSender / AudioSender stack. Root, developer options, wireless debugging and ADB are not required; Android 12 or later is required.
 
-Current goal (since 2026-11-06): port all CarLife features already verified in the old smali-injection build into maintainable source (video, wallpaper/safe-area composition, audio/TTS, touch, navigation, media, HUD, voice key, GPS, MAC identity, diagnostics, wallpapers, settings), remove the built-in wireless ADB activation, slim the APK, and produce field-test packages. Feature progress: [port matrix](docs/PORT_MATRIX.md); goals and field-test checklist: [CarLife port plan](docs/CARLIFE_PORT_PLAN.md).
+Compatibility: **Buick vehicles only** for now. On the phone side, Honor devices (Honor CarLink / CarLife+ wireless connection) are supported first; compatibility with CarLife+ on other Android phones will be verified from feedback. See the [CarLife connection mechanism](docs/carlife-mechanism.md).
 
 ## Getting started
 
@@ -13,7 +13,7 @@ Compatibility depends on the phone and receiver. Keeping a connection while the 
 ## Field-test package and log feedback
 
 - Test package: the `.buick` APK (`app/build/outputs/apk/buick/app-buick.apk`); version and SHA-256 are published with the release notes.
-- Log feedback: use "Settings → Help & diagnostics → Export log file" in the app, and include phone/receiver model, system version, app version and reproduction steps.
+- Log feedback: use "Settings → Logs & About → Export logs" in the app, and include phone/receiver model, system version, app version and reproduction steps.
 - Developer debugging: `scripts/p1a-field-check.ps1` captures and validates CarLife log markers (`scripts/verify-carlife-log.ps1` validates an existing log).
 
 ## Build
@@ -29,8 +29,9 @@ The test APK uses the `.buick` suffix. Configure release signing with your own `
 
 ## Documentation
 
-- [Port matrix](docs/PORT_MATRIX.md)
-- [CarLife port plan](docs/CARLIFE_PORT_PLAN.md)
+- [Features and UI](docs/PORT_MATRIX.md)
+- [Goals, implementation and testing](docs/CARLIFE_PORT_PLAN.md)
+- [CarLife connection mechanism](docs/carlife-mechanism.md)
 - [No-ADB model and permissions](docs/no-adb-model.md)
 - [GitHub downstream sync workflow](docs/GITHUB_WORKFLOW.md)
 - [Architecture](docs/architecture.md)
@@ -39,6 +40,13 @@ The test APK uses the `.buick` suffix. Configure release signing with your own `
 
 ## License
 
-Based on [shaonialife/cardeck](https://github.com/shaonialife/cardeck), with the original [MIT license](LICENSE) and copyright retained. Third-party components keep their own licenses.
+Built on [schemawisp/link_plus](https://github.com/schemawisp/link_plus) (Buick Link+, MIT; itself based on [shaonialife/cardeck](https://github.com/shaonialife/cardeck)), with the original [MIT license](LICENSE) and copyright retained. Third-party components keep their own licenses.
 
-This is an unofficial project, unaffiliated with and not authorized or certified by Buick, General Motors or Apple. All trademarks belong to their respective owners. Please follow local traffic laws.
+**Code provenance and attribution**
+
+- Upstream base: [schemawisp/link_plus](https://github.com/schemawisp/link_plus) (MIT); this repository is a downstream fork and keeps the upstream LICENSE.
+- CarLife protocol/client/video/audio parts use the MIT-licensed implementation from [CarPToCarL](https://github.com/jjuugk/CarPToCarL) (commit `7b729fb`, Copyright (c) 2026 lizhihua) and are adapted to the link_plus pipeline (decode to the `VideoSender` encoder surface, audio through `AudioSender`, no-ADB rework, etc.). See [docs/third-party/CarPToCarL-NOTICE.md](docs/third-party/CarPToCarL-NOTICE.md) for the per-file notice; source files also keep the upstream attribution header.
+- **This project does not provide or distribute resources from the old closed-source application** (APKs, images, logs, etc.), and bundles no third-party wallpaper images: wallpapers are either generated backgrounds or user-provided images.
+- The MIT copyright and permission notices of the upstream and reference implementations are retained; keep them when redistributing.
+
+This is an unofficial project, unaffiliated with and not authorized or certified by Buick, General Motors, Apple or Baidu. All trademarks belong to their respective owners. Please follow local traffic laws.

@@ -1,4 +1,4 @@
-// 新增测试：JVM 假引擎集成测试（无设备）。无移植来源。
+// 新增测试：JVM 假引擎集成测试（无设备）。无外部来源。
 package io.github.shaonialife.buicklinkplus.carlife
 
 import org.junit.Assert.assertArrayEquals

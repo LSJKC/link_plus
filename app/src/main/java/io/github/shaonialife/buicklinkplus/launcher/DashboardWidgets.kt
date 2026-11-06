@@ -23,7 +23,7 @@ object DashboardWidgets {
     private const val PROVIDER = "provider"
     private const val PHASE = "phase"
 
-    // 只列入已核对原版 APK 的通用桌面组件，不启用比亚迪等厂商专属接口
+    // 只列入已核对官方实现的通用桌面组件，不启用比亚迪等厂商专属接口
     private val verifiedProviders =
         setOf(
             "com.tencent.qqmusiccar.syswidget.WidgetProviderMiddle",

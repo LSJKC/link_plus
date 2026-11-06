@@ -1,7 +1,7 @@
 /* P3 CarLife 触摸回传：把车机触摸映射到 CarLife 引擎的 9340 触摸通道。
  *
- * 逻辑移植自（同一作者，MIT）：
- * - hybrid63 `inject/src/tl/CarLifeTouch.java`：安全区/内容层 rect → 引擎视频坐标映射、
+ * 逻辑参考自（同一作者，MIT）：
+ * - 历史参考实现 `tl/CarLifeTouch.java`：安全区/内容层 rect → 引擎视频坐标映射、
  *   单点 DOWN/MOVE/UP，以及第二指切换到复合动作（0x68001）的指针处理；
  * - CarPToCarL `carlife/CarLifeHijack.kt` 的 `handleTouch`：手势状态机——缺 UP 恢复
  *   （车机漏发抬起会让引擎永久卡在按住态）、超时收尾、短促点击的坐标回吸（避免抖动
@@ -19,7 +19,7 @@
  *   本类方法不阻塞调用线程（触摸回调/主线程）。
  *
  * 注意（现场调参）：CarPToCarL 后期结论（v0.2.17）认为「车机 display 坐标原样透传」
- * 才对——引擎会按 getTouchXOffset() 自行换算。本文件按 P3 任务要求沿用 hybrid63
+ * 才对——引擎会按 getTouchXOffset() 自行换算。本文件按 P3 任务要求沿用历史参考实现
  * 已验证的显式映射；若实车落点整体偏移/压缩，把 [updateViewport] 的 contentRect 传
  * 整幅 viewport、source 传 viewport 尺寸即可退化成恒等映射（接线侧改一行，本文件不动）。
  */
@@ -131,8 +131,8 @@ class CarLifeTouchSink(
      *
      * @param viewWidth/viewHeight 传入 [down]/[move]/[up] 的坐标域尺寸（TouchRouter 传
      *   DisplayGeometry.canvasWidth/Height，即编码器输入画面尺寸）。
-     * @param contentRect 视频窗格所在内容层 rect（DisplayGeometry.content，原版安全区语义）；
-     *   小于视频宽高比时按 contain 居中适配（与 hybrid63 publishFit 的窗格算法一致）。
+     * @param contentRect 视频窗格所在内容层 rect（DisplayGeometry.content，内容层安全区语义）；
+     *   小于视频宽高比时按 contain 居中适配（与历史参考实现 publishFit 的窗格算法一致）。
      * @param sourceWidth/sourceHeight 视频真实分辨率；传 0/0（默认）表示跟随
      *   [CarLifeHuClient.videoSize]（SPS 优先、协商档位兜底），一般不需要显式传。
      */
@@ -453,7 +453,7 @@ class CarLifeTouchSink(
     }
 
     /**
-     * 显示坐标 → 视频坐标（移植 hybrid63 CarLifeTouch.onTouch 的公式，含 contain 窗格）：
+     * 显示坐标 → 视频坐标（沿用历史参考实现 CarLifeTouch.onTouch 的公式，含 contain 窗格）：
      * 先把视频按原始宽高比 contain 到 contentRect 得到实际窗格 pane，再按比例映射。
      */
     private fun mapPoint(

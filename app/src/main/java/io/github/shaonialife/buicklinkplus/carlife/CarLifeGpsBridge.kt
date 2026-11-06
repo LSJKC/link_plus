@@ -3,7 +3,7 @@
  * 数据方向：本机 Android 定位（GPS/网络 provider）→ [CarGpsFix] → sink
  * （接线方转给 [io.github.shaonialife.buicklinkplus.carlife.CarLifeHuClient.sendCarGps]）。
  * CarLife+ 地图在「车机定位优先」时使用这条通道的坐标，可改善车内手机定位差（贴膜/仪表台）
- * 时的导航定位。移植自 CarPToCarL `carlife/CarGpsOption.kt` 的开关语义与
+ * 时的导航定位。改编自 CarPToCarL `carlife/CarGpsOption.kt` 的开关语义与
  * `CarlifeHuClient.sendCarGps` 的单位约定（1/1,000,000 度 / 0.1 米 / 0.01 km/h）。
  *
  * 说明：
@@ -34,6 +34,7 @@ import android.location.LocationManager
 import android.os.HandlerThread
 import android.os.SystemClock
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
 import java.util.Calendar
 import java.util.TimeZone
 
@@ -298,7 +299,7 @@ class CarLifeGpsBridge(
             context: Context,
             enabled: Boolean,
         ) {
-            prefs(context).edit().putBoolean(PREF_KEY_ENABLED, enabled).apply()
+            prefs(context).edit { putBoolean(PREF_KEY_ENABLED, enabled) }
         }
     }
 }

@@ -1,10 +1,13 @@
 package io.github.shaonialife.buicklinkplus.ui
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.ImageDecoder
+import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.RectF
+import android.graphics.Shader
 import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
@@ -208,34 +211,32 @@ class WallpaperActivity : GlassActivity() {
     }
 
     /**
-     * 解码预览使用后台线程，快速换图时丢弃过期结果
+     * 解码预览使用后台线程，快速换图时丢弃过期结果。
+     *
+     * 没有用户壁纸时不再显示 1x1 纯色（旧版“黑坨坨”），而是取/生成默认壁纸；
+     * 用户选择的图片读取失败时回退当前正式壁纸，预览不再变黑。
      */
     private fun loadPreview() {
         val request = ++generation
         val uri = selectedUri
         val useDefault = defaultImage
         val app = applicationContext
-        preview.bitmap = null
-        preview.invalidate()
+        val ratio = canvasAspectRatio()
+        preview.setBitmap(null)
         status.setText(R.string.wallpaper_editor_loading)
         refreshControlsEnabled()
         previewExecutor.execute {
             if (request != generation) return@execute
+            var fallbackToCurrent = false
             val bitmap =
                 runCatching {
                     when {
-                        useDefault -> WallpaperStore.defaultBackground()
-                        uri == null -> WallpaperStore.decode(app, 1280)
+                        useDefault -> defaultPreviewBitmap()
+                        uri == null -> WallpaperStore.previewBitmap(app, PREVIEW_MAX_SIZE, ratio)
                         else -> {
-                            val source = ImageDecoder.createSource(app.contentResolver, uri)
-                            ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
-                                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
-                                val scale = minOf(1f, 1280f / maxOf(info.size.width, info.size.height))
-                                decoder.setTargetSize(
-                                    maxOf(1, (info.size.width * scale).toInt()),
-                                    maxOf(1, (info.size.height * scale).toInt()),
-                                )
-                            }
+                            val decoded = decodePreview(app, uri)
+                            if (decoded == null) fallbackToCurrent = true
+                            decoded ?: WallpaperStore.previewBitmap(app, PREVIEW_MAX_SIZE, ratio)
                         }
                     }
                 }.getOrNull()
@@ -244,20 +245,59 @@ class WallpaperActivity : GlassActivity() {
                     bitmap?.recycle()
                     return@runOnUiThread
                 }
-                preview.bitmap = bitmap
+                preview.setBitmap(bitmap)
                 status.setText(
                     when {
-                        bitmap == null -> R.string.wallpaper_editor_load_error
+                        bitmap == null || fallbackToCurrent -> R.string.wallpaper_editor_load_error
                         VirtualLauncher.wallpaperGeometry == null -> R.string.wallpaper_editor_example
                         else -> R.string.wallpaper_editor_live
                     },
                 )
                 preview.requestLayout()
-                preview.invalidate()
                 refreshControlsEnabled()
             }
         }
     }
+
+    /** 当前画布宽高比；未连接车机时用历史参考的 1972x520 兜底 */
+    private fun canvasAspectRatio(): Float {
+        val geometry = VirtualLauncher.wallpaperGeometry
+        val width = geometry?.canvasWidth ?: 1972
+        val height = geometry?.canvasHeight ?: 520
+        return if (width > 0 && height > 0) width.toFloat() / height else 1972f / 520f
+    }
+
+    /** “恢复默认”草稿预览：按画布比例生成默认壁纸（不用 1x1 纯色，否则预览是黑底） */
+    private fun defaultPreviewBitmap(): Bitmap? {
+        val ratio = canvasAspectRatio()
+        val width: Int
+        val height: Int
+        if (ratio >= 1f) {
+            width = PREVIEW_MAX_SIZE
+            height = (PREVIEW_MAX_SIZE / ratio).toInt().coerceAtLeast(2)
+        } else {
+            height = PREVIEW_MAX_SIZE
+            width = (PREVIEW_MAX_SIZE * ratio).toInt().coerceAtLeast(2)
+        }
+        return WallpaperStore.generatedDefault(this, width, height)
+    }
+
+    /** 解码用户选择的图片为预览小图；解析失败返回 null 由调用方回退当前壁纸 */
+    private fun decodePreview(
+        context: Context,
+        uri: Uri,
+    ): Bitmap? =
+        runCatching {
+            val source = ImageDecoder.createSource(context.contentResolver, uri)
+            ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                val scale = minOf(1f, PREVIEW_MAX_SIZE / maxOf(info.size.width, info.size.height).toFloat())
+                decoder.setTargetSize(
+                    maxOf(1, (info.size.width * scale).toInt()),
+                    maxOf(1, (info.size.height * scale).toInt()),
+                )
+            }
+        }.getOrNull()
 
     /**
      * 后台原子保存图片并统一发布校准版本，失败时保留编辑页
@@ -302,11 +342,12 @@ class WallpaperActivity : GlassActivity() {
     }
 
     /**
-     * 页面结束后旧图片加载结果失效
+     * 页面结束后旧图片加载结果失效，并回收预览位图（正式壁纸缓存不归本页所有，不能回收）
      */
     override fun onDestroy() {
         generation++
         previewExecutor.shutdownNow()
+        if (::preview.isInitialized) preview.setBitmap(null)
         super.onDestroy()
     }
 
@@ -315,16 +356,28 @@ class WallpaperActivity : GlassActivity() {
      */
     private inner class Preview : View(this@WallpaperActivity) {
         var bitmap: Bitmap? = null
+            private set
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private var backgroundShader: LinearGradient? = null
+        private var shaderWidth = -1f
+        private var shaderHeight = -1f
         private val bitmapBounds = RectF()
+
+        /** 替换预览位图并回收上一张（上一张都是本页自己解码/生成的，不含 WallpaperStore 缓存） */
+        fun setBitmap(next: Bitmap?) {
+            val previous = bitmap
+            bitmap = next
+            if (previous != null && previous !== next && !previous.isRecycled) previous.recycle()
+            invalidate()
+        }
 
         /** 按画布比例显示预览，竖向画布限制高度 */
         override fun onMeasure(
             widthMeasureSpec: Int,
             heightMeasureSpec: Int,
         ) {
-            val geometry = VirtualLauncher.wallpaperGeometry
-            val ratio = (geometry?.canvasWidth ?: 1972).toFloat() / (geometry?.canvasHeight ?: 520)
+            val ratio = canvasAspectRatio()
             val available = MeasureSpec.getSize(widthMeasureSpec).takeIf { it > 0 } ?: (320 * resources.displayMetrics.density).toInt()
             val previewWidth = resolveSize(available, widthMeasureSpec)
             val desiredHeight = (previewWidth / ratio).toInt().coerceIn(1, (240 * resources.displayMetrics.density).toInt())
@@ -332,20 +385,19 @@ class WallpaperActivity : GlassActivity() {
         }
 
         /**
-         * 使用与正式壁纸完全相同的变换公式
+         * 使用与正式壁纸完全相同的变换公式；空/加载中时用深色渐变底，避免出现纯黑方块
          */
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
             if (width <= 0 || height <= 0) return
-            val geometry = VirtualLauncher.wallpaperGeometry
-            val ratio = (geometry?.canvasWidth ?: 1972).toFloat() / (geometry?.canvasHeight ?: 520)
+            val ratio = canvasAspectRatio()
             val targetWidth = minOf(width.toFloat(), height * ratio)
             val targetHeight = targetWidth / ratio
             val left = (width - targetWidth) / 2f
             val top = (height - targetHeight) / 2f
             canvas.withTranslation(left, top) {
                 canvas.clipRect(0f, 0f, targetWidth, targetHeight)
-                canvas.drawColor(android.graphics.Color.BLACK)
+                drawPreviewBackground(canvas, targetWidth, targetHeight)
                 bitmap?.let {
                     val bounds = calibration.bounds(it.width, it.height, targetWidth, targetHeight)
                     bitmapBounds.set(bounds.left, bounds.top, bounds.right, bounds.bottom)
@@ -353,5 +405,36 @@ class WallpaperActivity : GlassActivity() {
                 }
             }
         }
+
+        /** 预览空态/留白背景：深蓝紫渐变（与壁纸底色一致，不再是纯黑） */
+        private fun drawPreviewBackground(
+            canvas: Canvas,
+            width: Float,
+            height: Float,
+        ) {
+            var shader = backgroundShader
+            if (shader == null || shaderWidth != width || shaderHeight != height) {
+                shader =
+                    LinearGradient(
+                        0f,
+                        0f,
+                        0f,
+                        height,
+                        intArrayOf(0xFF1B1D31.toInt(), 0xFF12131F.toInt(), 0xFF0C0D16.toInt()),
+                        null,
+                        Shader.TileMode.CLAMP,
+                    )
+                backgroundShader = shader
+                shaderWidth = width
+                shaderHeight = height
+            }
+            backgroundPaint.shader = shader
+            canvas.drawRect(0f, 0f, width, height, backgroundPaint)
+        }
+    }
+
+    private companion object {
+        /** 预览位图最长边（分辨率上限，避免大图解码占用内存） */
+        private const val PREVIEW_MAX_SIZE = 1280
     }
 }

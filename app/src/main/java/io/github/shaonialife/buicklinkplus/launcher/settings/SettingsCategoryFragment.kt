@@ -14,6 +14,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
@@ -25,13 +26,14 @@ import androidx.core.net.toUri
 import androidx.fragment.app.Fragment
 import io.github.shaonialife.buicklinkplus.R
 import io.github.shaonialife.buicklinkplus.SettingsContentActivity
+import io.github.shaonialife.buicklinkplus.carlife.CarLifeEngineDetector
 import io.github.shaonialife.buicklinkplus.carlife.CarLifeGpsBridge
 import io.github.shaonialife.buicklinkplus.carlife.CarLifeNowPlaying
-import io.github.shaonialife.buicklinkplus.carlife.CarLifeProtocol
 import io.github.shaonialife.buicklinkplus.legal.DisclaimerDialog
 import io.github.shaonialife.buicklinkplus.session.SessionCommands
 import io.github.shaonialife.buicklinkplus.session.SessionController
 import io.github.shaonialife.buicklinkplus.ui.CarLifeHudReceiver
+import io.github.shaonialife.buicklinkplus.ui.GeneratedWallpapers
 import io.github.shaonialife.buicklinkplus.ui.PanelWindow
 import io.github.shaonialife.buicklinkplus.ui.WallpaperActivity
 import io.github.shaonialife.buicklinkplus.ui.WallpaperStore
@@ -40,8 +42,6 @@ import io.github.shaonialife.buicklinkplus.ui.setAppearanceTextColor
 import io.github.shaonialife.buicklinkplus.util.Bg
 import io.github.shaonialife.buicklinkplus.util.DeviceIdentity
 import io.github.shaonialife.buicklinkplus.util.LogExporter
-import java.net.InetSocketAddress
-import java.net.Socket
 
 /**
  * CarLife 版设置分组：六类页面（连接与设备 / 显示与画面 / 音频 / CarLife /
@@ -203,7 +203,7 @@ class SettingsCategoryFragment : Fragment() {
             SettingsMenus.PERMISSIONS -> permissionsPage(context, ::note, ::action)
             SettingsMenus.AUDIO -> audioPage(context, ::add, ::note, ::switchRow)
             SettingsMenus.CARLIFE -> carLifePage(context, ::add, ::note, ::action, ::switchRow)
-            SettingsMenus.APPEARANCE -> wallpaperPage(context, ::add, ::note, ::action)
+            SettingsMenus.APPEARANCE -> wallpaperPage(context, ::add, ::note, ::action, ::switchRow)
             SettingsMenus.ABOUT -> aboutPage(context, ::note, ::action)
             else -> note("该设置页已下线，请返回设置列表")
         }
@@ -292,7 +292,7 @@ class SettingsCategoryFragment : Fragment() {
         note: (String) -> Unit,
         switchRow: (String, String, Boolean, (Boolean) -> Unit) -> Unit,
     ) {
-        note("CarLife 媒体音频与 TTS 导航播报会混入 CarPlay 音频通道；关闭后车机侧无声。")
+        note("CarLife 媒体音频与 TTS 导航播报会混入车机侧音频通道；关闭后车机侧无声。")
         switchRow("CarLife 音源", "把 CarLife 的媒体声音送到车机", CarLifePrefs.audioEnabled(context)) { enabled ->
             CarLifePrefs.setAudioEnabled(context, enabled)
             hostToast(if (enabled) "CarLife 音源已开启" else "CarLife 音源已关闭")
@@ -305,7 +305,7 @@ class SettingsCategoryFragment : Fragment() {
             CarLifePrefs.setNavEnabled(context, enabled)
             hostToast(if (enabled) "导航指引已开启" else "导航指引已关闭")
         }
-        // 音量：直接调系统媒体音量（CarPlay 音频走媒体通道）
+        // 音量：手机媒体音量即 CarPlay 音频通道音量（声音最终从车机播放）
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
         if (audioManager != null) {
             val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
@@ -319,9 +319,17 @@ class SettingsCategoryFragment : Fragment() {
                 }
             card.addView(
                 TextView(context).apply {
-                    text = "媒体音量"
+                    text = "手机媒体音量（STREAM_MUSIC）"
                     textSize = 16f
                     setAppearanceTextColor(R.color.m3_on_surface)
+                },
+                LinearLayout.LayoutParams(-1, -2),
+            )
+            card.addView(
+                TextView(context).apply {
+                    text = "调节手机媒体音量；车机侧声音大小跟随该通道"
+                    textSize = 12f
+                    setAppearanceTextColor(R.color.m3_on_var)
                 },
                 LinearLayout.LayoutParams(-1, -2),
             )
@@ -375,7 +383,7 @@ class SettingsCategoryFragment : Fragment() {
         action: (String, () -> Unit) -> Unit,
         switchRow: (String, String, Boolean, (Boolean) -> Unit) -> Unit,
     ) {
-        note("本页面检查手机本机 CarLife+ 引擎的 TCP 端口，并管理当前投屏会话。")
+        note("本页面检测手机上的 CarLife/车联引擎与本机 TCP 端口，并管理当前 CarLife 会话。")
         val density = resources.displayMetrics.density
         val engineStatus =
             TextView(context).apply {
@@ -384,14 +392,14 @@ class SettingsCategoryFragment : Fragment() {
                 text = "正在检测 CarLife+ 引擎…"
             }
         add(engineStatus)
-        val portStatus =
+        val engineDetail =
             TextView(context).apply {
                 textSize = 13f
                 setLineSpacing(2 * density, 1f)
                 setAppearanceTextColor(R.color.m3_on_var)
-                text = "端口自检：未开始"
+                text = "引擎/端口自检：未开始"
             }
-        add(portStatus)
+        add(engineDetail)
         val diag =
             TextView(context).apply {
                 textSize = 12f
@@ -410,15 +418,11 @@ class SettingsCategoryFragment : Fragment() {
         val appContext = context.applicationContext
 
         fun refresh() {
-            portStatus.text = "端口自检：检测中…"
-            Bg.run("carlife-port-check") {
-                val probes =
-                    CARLIFE_PORTS.map { (label, port) -> label to (port to isPortOpen(port)) }
-                val lines =
-                    probes.joinToString("\n") { (label, result) ->
-                        val (port, open) = result
-                        "${if (open) "✓" else "✗"} $label $port ${if (open) "监听中" else "未监听"}"
-                    }
+            engineDetail.text = "引擎/端口自检：检测中…"
+            Bg.run("carlife-engine-detect") {
+                val engineText =
+                    runCatching { CarLifeEngineDetector.statusText(context) }
+                        .getOrDefault("CarLife 引擎检测失败，请稍后重试")
                 val recent =
                     SessionController
                         .logText()
@@ -430,28 +434,21 @@ class SettingsCategoryFragment : Fragment() {
                         .ifBlank { "暂无 CARLIFE 日志" }
                 android.os.Handler(android.os.Looper.getMainLooper()).post {
                     if (!isAdded) return@post
-                    val source = SessionController.currentScreenSource as? io.github.shaonialife.buicklinkplus.capture.CarLifeScreenSource
-                    portStatus.text = "端口自检：\n$lines"
+                    val source =
+                        SessionController.currentScreenSource as?
+                            io.github.shaonialife.buicklinkplus.capture.CarLifeScreenSource
+                    engineDetail.text = engineText
                     diag.text =
                         buildString {
                             append("诊断信息（最近 CARLIFE 日志）：\n$recent")
                             source?.lastErrorText?.takeIf { it.isNotBlank() }?.let { append("\n最后错误：$it") }
                         }
-                    mediaStatus.text =
-                        buildString {
-                            append("媒体/封面：")
-                            append(CarLifeNowPlaying.statusText())
-                        }
+                    mediaStatus.text = "媒体/封面：" + CarLifeNowPlaying.statusText()
                     engineStatus.text =
                         buildString {
-                            if (probes.firstOrNull()?.second?.second == true) {
-                                append("CarLife+ 引擎已进入无线连接态")
-                            } else {
-                                append("未检测到 CarLife+ 引擎（打开 CarLife+ 并点「无线连接」）")
-                            }
-                            append("\n画面源：")
+                            append("画面源：")
                             if (source == null) {
-                                append("未挂载（尚未开始投屏会话）")
+                                append("未挂载（尚未开始连接会话）")
                             } else {
                                 append(if (source.isEngineConnected) "已连接" else "连接中/重试中")
                                 if (source.streamWidth > 0 && source.streamHeight > 0) {
@@ -480,7 +477,7 @@ class SettingsCategoryFragment : Fragment() {
                 SessionController.startConnection(appContext)
             }
         }
-        action("刷新状态 / 端口自检") { refresh() }
+        action("刷新状态（引擎/端口自检）") { refresh() }
         action("重连 CarLife 会话") { reconnect() }
         // HUD/导航调试：向本机广播注入一条转向信息，验证 0x10030/0x5201 链路（无需 adb）。
         action("发送 HUD 测试（右转 500m）") {
@@ -521,10 +518,66 @@ class SettingsCategoryFragment : Fragment() {
         add: (View) -> Unit,
         note: (String) -> Unit,
         action: (String, () -> Unit) -> Unit,
+        switchRow: (String, String, Boolean, (Boolean) -> Unit) -> Unit,
     ) {
         val appContext = context.applicationContext
-        note("壁纸用于 CarLife 画面合成背景：选择自己的图片后，合成器按画布 cover 自动铺满；在「显示与画面 → 壁纸背景」可临时关闭，关闭后用纯色底。")
-        note("为避免再分发第三方闭源资源，本版不内置壁纸图片，仅支持导入自己的图片。")
+        val density = resources.displayMetrics.density
+        note("壁纸用于 CarLife 画面合成背景；点选下方内置壁纸即可应用，也可导入自己的图片。")
+        // 内置壁纸：由本应用代码绘制生成（ui/GeneratedWallpapers.kt），不含第三方素材
+        val grid = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        GeneratedWallpapers.TITLES.indices.chunked(3).forEach { indices ->
+            val line = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+            indices.forEach { index ->
+                val cell =
+                    LinearLayout(context).apply {
+                        orientation = LinearLayout.VERTICAL
+                        gravity = android.view.Gravity.CENTER
+                        isFocusable = true
+                        isClickable = true
+                        setPadding((4 * density).toInt(), (4 * density).toInt(), (4 * density).toInt(), (4 * density).toInt())
+                        setOnClickListener {
+                            GeneratedWallpapers.applyAsync(context, index) { error ->
+                                if (isAdded) hostToast(error ?: "已应用壁纸：${GeneratedWallpapers.TITLES[index]}")
+                            }
+                        }
+                    }
+                val image =
+                    ImageView(context).apply {
+                        scaleType = ImageView.ScaleType.CENTER_CROP
+                        setBackgroundColor(0xFF161326.toInt())
+                        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                    }
+                cell.addView(image, LinearLayout.LayoutParams(-1, (86 * density).toInt()))
+                cell.addView(
+                    TextView(context).apply {
+                        text = GeneratedWallpapers.TITLES[index]
+                        textSize = 12f
+                        gravity = android.view.Gravity.CENTER
+                        setAppearanceTextColor(R.color.m3_on_var)
+                    },
+                    LinearLayout.LayoutParams(-1, -2).apply { topMargin = (4 * density).toInt() },
+                )
+                line.addView(cell, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = (6 * density).toInt() })
+                Bg.run("wallpaper-thumb") {
+                    val bitmap = GeneratedWallpapers.loadThumb(appContext, index, 240)
+                    if (bitmap != null) {
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            if (isAdded) image.setImageBitmap(bitmap)
+                        }
+                    }
+                }
+            }
+            grid.addView(line, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = (6 * density).toInt() })
+        }
+        add(grid)
+        switchRow("壁纸背景", "CarLife 画面合成时显示壁纸；关闭后使用纯色底", CarLifePrefs.wallpaperEnabled(context)) { enabled ->
+            CarLifePrefs.setWallpaperEnabled(context, enabled)
+            hostToast(if (enabled) "壁纸背景已开启" else "壁纸背景已关闭")
+        }
+        switchRow("画面圆角", "车机画面四角圆角 ${CarLifePrefs.CORNER_RADIUS_ON}dp；关闭为直角", CarLifePrefs.cornerEnabled(context)) { enabled ->
+            CarLifePrefs.setCornerEnabled(context, enabled)
+            hostToast(if (enabled) "画面圆角已开启" else "画面圆角已关闭")
+        }
         action("打开壁纸编辑器（自定义图片）") {
             startActivity(Intent(context, WallpaperActivity::class.java))
         }
@@ -537,7 +590,6 @@ class SettingsCategoryFragment : Fragment() {
             }
         }
     }
-
     // ==================== 日志与关于 ====================
 
     private fun aboutPage(
@@ -548,8 +600,9 @@ class SettingsCategoryFragment : Fragment() {
         note(
             "Buick Link + ${io.github.shaonialife.buicklinkplus.BuildConfig.VERSION_NAME}（${io.github.shaonialife.buicklinkplus.BuildConfig.VERSION_CODE}）",
         )
-        action("导出本次启动日志") { exportLog(context, LogExporter.Scope.CURRENT_SESSION) }
-        action("导出全部历史日志") { exportLog(context, LogExporter.Scope.ALL) }
+        // 日志 ZIP：field-tools 提供的 LogExporter.exportAndShare / shareLastBundle
+        action("导出日志（ZIP）") { runLogZip(context, share = false) }
+        action("分享日志（ZIP）") { runLogZip(context, share = true) }
         action("清空界面日志") {
             SessionController.clearLog()
             hostToast("界面日志已清空")
@@ -560,26 +613,39 @@ class SettingsCategoryFragment : Fragment() {
                 requireAcceptance = false,
             )
         }
-        note("日志导出到「下载/Buick Link＋」，可分享给开发者排查问题。本项目基于 MIT 许可的开源项目，第三方归属见应用内声明。")
+        note("日志 ZIP 导出到「下载/Buick Link＋」，可分享给开发者排查问题。本项目基于 link_plus 开发，第三方归属见应用内声明。")
     }
 
-    private fun exportLog(
+    // ==================== 生命周期与提示 ====================
+
+    /** 日志 ZIP 导出/分享（LogExporter.exportAndShare / shareLastBundle）。 */
+    private fun runLogZip(
         context: Context,
-        scope: LogExporter.Scope,
+        share: Boolean,
     ) {
-        hostToast(if (scope == LogExporter.Scope.ALL) "正在导出全部日志…" else "正在导出本次启动的日志…")
+        hostToast(if (share) "正在打开分享…" else "正在打包日志…")
         val appContext = context.applicationContext
-        Bg.run("export-log") {
-            val result = LogExporter.export(appContext, SessionController.logText(), scope)
+        Bg.run("log-zip") {
+            val ok =
+                if (share) {
+                    runCatching { LogExporter.shareLastBundle(appContext) }.getOrDefault(false)
+                } else {
+                    runCatching { LogExporter.exportAndShare(appContext) }.getOrDefault(false)
+                }
             android.os.Handler(android.os.Looper.getMainLooper()).post {
                 if (isAdded) {
-                    hostToast(if (result == null) "日志导出失败，请检查存储空间" else "日志已导出：${result.displayPath}")
+                    hostToast(
+                        when {
+                            ok && share -> "已打开分享（ZIP 在 下载/Buick Link＋）"
+                            ok -> "日志 ZIP 已导出到 下载/Buick Link＋"
+                            share -> "分享失败，请检查存储空间后重试"
+                            else -> "日志打包失败，请检查存储空间"
+                        },
+                    )
                 }
             }
         }
     }
-
-    // ==================== 生命周期与提示 ====================
 
     override fun onResume() {
         super.onResume()
@@ -610,27 +676,6 @@ class SettingsCategoryFragment : Fragment() {
     }
 
     companion object {
-        private val CARLIFE_PORTS =
-            listOf(
-                "控制" to CarLifeProtocol.PORT_CMD,
-                "视频" to CarLifeProtocol.PORT_VIDEO,
-                "媒体" to CarLifeProtocol.PORT_MEDIA,
-                "TTS" to CarLifeProtocol.PORT_TTS,
-                "触摸" to CarLifeProtocol.PORT_TOUCH,
-                "数据" to CarLifeProtocol.PORT_DATA,
-            )
-
-        /** 端口是否在本机监听（250ms 超时的 TCP 连接探测，不发送任何数据）。 */
-        private fun isPortOpen(port: Int): Boolean =
-            try {
-                Socket().use { socket ->
-                    socket.connect(InetSocketAddress("127.0.0.1", port), 250)
-                    true
-                }
-            } catch (_: Exception) {
-                false
-            }
-
         /**
          * 手填本机蓝牙地址：Honor/MagicOS 等脱敏机型无法自动解析时使用。
          *

@@ -27,8 +27,6 @@
     <string name="phone_permissions_notification_hint">显示连接状态和后台服务提醒</string>
     <string name="phone_permissions_media">音乐信息权限</string>
     <string name="phone_permissions_media_hint">通过通知使用权显示歌曲与播放状态</string>
-    <string name="phone_permissions_audio">车机声音授权</string>
-    <string name="phone_permissions_audio_hint">开启车机声音时，需要录音与本次投屏授权</string>
     <string name="phone_permissions_compat">使用兼容暗屏</string>
     <string name="phone_permissions_compat_hint">开启后保持常亮，并在无操作时显示暗幕</string>
     <string name="phone_permissions_sleep_help">查看息屏与后台设置指引　›</string>
@@ -44,7 +42,6 @@
     <string name="phone_permissions_not_exempt">未豁免</string>
     <string name="phone_permissions_manual">需手动确认</string>
     <string name="phone_permissions_confirmed">用户已确认</string>
-    <string name="phone_permissions_audio_missing">按需授权</string>
     <string name="phone_permissions_view">查看</string>
     <string name="phone_permissions_settings_unavailable">无法打开该设置页，请在手机系统设置中手动配置</string>
     <string name="phone_permissions_request_pending">请先完成当前授权操作</string>

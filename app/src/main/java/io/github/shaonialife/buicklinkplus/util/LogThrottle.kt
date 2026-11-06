@@ -1,4 +1,4 @@
-// Ported from CarPToCarL util/LogThrottle.kt (MIT, Copyright (c) 2026 lizhihua), commit 7b729fb.
+// Adapted from CarPToCarL util/LogThrottle.kt (MIT, Copyright (c) 2026 lizhihua), commit 7b729fb.
 package io.github.shaonialife.buicklinkplus.util
 
 /**

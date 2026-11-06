@@ -1,9 +1,9 @@
 /*
- * Ported from hybrid63 inject/src/tl/CarLifeNav.java (this project's own prior injected implementation).
- * 0x10030 protobuf parsing ported from hybrid63 inject/src/com/turtlelink/carlife/CarLifeHuClient.java
- * (`parseNaviTurn` / `readProtoVarint`, same project's injected source).
- * 0x5201/0x5202 TLV layout kept byte-for-byte from the prior implementation; field types cross-checked
- * against the real-car logs listed in the KDoc below.
+ * Adapted from the historical reference implementation's CarLifeNav.java.
+ * 0x10030 protobuf parsing adapted from the historical implementation's CarLifeHuClient.java
+ * (`parseNaviTurn` / `readProtoVarint`).
+ * 0x5201/0x5202 TLV layout kept byte-for-byte from the historical implementation; field types
+ * cross-checked against the real-car logs listed in the KDoc below.
  */
 
 package io.github.shaonialife.buicklinkplus.carlife
@@ -16,7 +16,7 @@ import java.io.ByteArrayOutputStream
  * 见 [CarLifeNavAmap]）归一成 HUD 快照，再编码成 iAP2 `0x5201`（路线指引）与 `0x5202`（机动点）
  * 的 TLV 负载，交给 [io.github.shaonialife.buicklinkplus.iap2.Iap2SenderSession] 发送。
  *
- * ## 字段依据（hybrid63 已验证 + 真车日志）
+ * ## 字段依据（历史实车验证 + 真车日志）
  *
  * - `0x5201`（RouteGuidanceUpdate，附录 ch16 §2.2）：`0x00` 组件表（u16[]）、`0x01` state(u8)、
  *   `0x02` maneuverState(**u64**，固件要求；写成 u8 会让车机整条拒绝)、`0x03` 当前路名、
@@ -30,7 +30,7 @@ import java.io.ByteArrayOutputStream
  *   `0x5201/0x5202/0x5204`，订阅（`0x5200`）由车机发起，**收到订阅前不要发**（由
  *   [io.github.shaonialife.buicklinkplus.iap2.Iap2SenderSession] 的 `navSubscribed` 闸门保证）。
  *
- * ## 真车样例（2026-11-06 Audi MIB3，BT iAP2；来自 port_evidence 导出的 turtlelink 日志）
+ * ## 真车样例（2026-11-06 Audi MIB3，BT iAP2；来自 port_evidence 导出的实车日志）
  *
  * ```
  * [iap2-bt-client] iap2 tx=0x5201 bytes=74 tlv=0:4B, 1:1B, 3:39B, 13:2B, 19:8B
@@ -55,7 +55,7 @@ import java.io.ByteArrayOutputStream
  *    只有 CarLife 内置百度导航会发这条（0x10030 之外的高德导航需要第 2 条数据源）。
  * 2. AMap LinkSDK：[CarLifeNavAmap] 回调 → [submitHud]。
  *
- * 通知文本兜底（原版 `onNotification`/`detectManeuverType`/`hudTurnFromAppleType`）本阶段不移植：
+ * 通知文本兜底（历史实现 `onNotification`/`detectManeuverType`/`hudTurnFromAppleType`）本阶段不实现：
  * 它依赖通知监听服务（`media/MediaListenerService`），属于媒体/通知链路，P4 导航先走上面两条结构化源。
  *
  * 接线（SessionController，下次改动）：
@@ -80,10 +80,10 @@ object CarLifeNav {
     /** 0x5200 组件号：媒体卡 CardView。 */
     const val COMPONENT_CARD_VIEW = 2
 
-    /** 默认组件表：两条组件各发一套 0x5201/0x5202（与 hybrid63 一致）。 */
+    /** 默认组件表：两条组件各发一套 0x5201/0x5202（与历史实车行为一致）。 */
     val DEFAULT_COMPONENTS = intArrayOf(COMPONENT_CLUSTER, COMPONENT_CARD_VIEW)
 
-    /** HUD turn 索引 → Apple 机动类型（BOX OFF RgdProbe 对照表，原样移植）。 */
+    /** HUD turn 索引 → Apple 机动类型（历史实车对照表，沿用历史参考实现）。 */
     private val HUD_TYPE_MAP =
         intArrayOf(
             -1,
@@ -132,7 +132,7 @@ object CarLifeNav {
             3,
         )
 
-    /** HUD turn 索引 → 机动描述（原样移植）。 */
+    /** HUD turn 索引 → 机动描述（沿用历史参考实现）。 */
     private val HUD_ACTION =
         arrayOf(
             "继续行驶",
@@ -238,7 +238,7 @@ object CarLifeNav {
     /**
      * 解析 CarLife `0x10030`（protobuf：1=action、2=nextTurn、3=roadName、4=total、5=remain）。
      *
-     * 与原版 `parseNaviTurn` 等价：只支持 wire type 0（varint）和 2（length-delimited，只认字段 3），
+     * 与历史参考实现的 `parseNaviTurn` 等价：只支持 wire type 0（varint）和 2（length-delimited，只认字段 3），
      * 其它 wire type / 越界 / 坏 varint 返回 null，调用方按「解析失败」只记日志、不构造导航帧。
      */
     fun parseNextTurn(payload: ByteArray?): NextTurn? {
@@ -285,7 +285,7 @@ object CarLifeNav {
         return NextTurn(action, nextTurn, road, total, remain)
     }
 
-    /** 0x10030 解析结果 → HUD 快照（HUD turn 索引直接用字段 2，与原版 CarLifeBridge 一致）。 */
+    /** 0x10030 解析结果 → HUD 快照（HUD turn 索引直接用字段 2，与历史参考实现一致）。 */
     fun hudUpdate(next: NextTurn): HudUpdate =
         HudUpdate(
             turn = next.nextTurn,
@@ -298,7 +298,7 @@ object CarLifeNav {
      * 构造一次导航更新的全部 iAP2 消息：组件 1/2 各一条 0x5201 + 一条 0x5202。
      *
      * `totalMeters <= 0` 视为无有效导航数据 → 返回空列表。**空数据/全 -1 帧绝不能发**，
-     * 否则会把车机上已有的 HUD 覆盖成空（旧工程踩坑记录）。
+     * 否则会把车机上已有的 HUD 覆盖成空（历史实车踩坑记录）。
      */
     fun updatesFor(
         update: HudUpdate,
@@ -320,8 +320,8 @@ object CarLifeNav {
     /**
      * 0x5201 路线指引更新负载（参数表见类 KDoc）。
      *
-     * 文本长度上限（路名 80B、距离文本 24B、源名 24B）与 hybrid63 完全一致；超长按字节截断后补 NUL，
-     * 与旧实现一样不做 UTF-8 边界回退（真车路名远小于上限，保持行为一致优先）。
+     * 文本长度上限（路名 80B、距离文本 24B、源名 24B）与历史参考实现完全一致；超长按字节截断后补 NUL，
+     * 与历史实现一样不做 UTF-8 边界回退（真车路名远小于上限，保持行为一致优先）。
      */
     fun buildRouteGuidanceUpdate(
         component: Int,
@@ -376,7 +376,7 @@ object CarLifeNav {
     /**
      * 0x5201 导航结束清理帧。
      *
-     * 注意：hybrid63 原版把参数 `0x02` 写成 u8=0，但固件对 0x5201 的参数 2 要求 u64，读写布局不符
+     * 注意：历史参考实现把参数 `0x02` 写成 u8=0，但固件对 0x5201 的参数 2 要求 u64，读写布局不符
      * 会让整条被拒；这里改成 u64=0（与正常更新帧一致），其余字段保持原样。
      */
     fun buildRouteGuidanceClear(component: Int): ByteArray {
@@ -400,7 +400,7 @@ object CarLifeNav {
     }
 
     /**
-     * 提交一次 HUD 快照（0x10030 或 AMap）。700ms 内相同 (turn,total) 去重，等价原版 `onHud`；
+     * 提交一次 HUD 快照（0x10030 或 AMap）。700ms 内相同 (turn,total) 去重，等价历史实现的 `onHud`；
      * `totalMeters <= 0` 不发（见 [updatesFor]）。
      *
      * @return 实际通过 [sink] 发出的消息条数；未接线/未订阅/无数据时为 0。
@@ -439,7 +439,7 @@ object CarLifeNav {
         return sent
     }
 
-    /** 调试/日志用十六进制（大写，无分隔；与 hybrid63 `CarLifeNav.hex` 一致）。 */
+    /** 调试/日志用十六进制（大写，无分隔；与历史参考实现的 `CarLifeNav.hex` 一致）。 */
     fun hex(bytes: ByteArray): String =
         buildString(bytes.size * 2) {
             for (byte in bytes) append("%02X".format(byte))
@@ -485,7 +485,7 @@ object CarLifeNav {
         return Iap2Csm.param(id, bytes)
     }
 
-    /** NUL 结尾 UTF-8 字符串参数，按 [maxBytes] 截断（hybrid63 `tlvStr` 行为）。 */
+    /** NUL 结尾 UTF-8 字符串参数，按 [maxBytes] 截断（历史参考实现的 `tlvStr` 行为）。 */
     private fun str(
         id: Int,
         value: String,

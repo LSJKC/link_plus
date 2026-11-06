@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider 路径配置（LogExporter/LogBundle 日志包分享用）。
+
+  日志 ZIP 由 LogBundle 写到 cacheDir/log-bundles/carlife-logs-<时间戳>.zip，
+  因此只暴露该子目录（cache-path），不暴露整个 cache/files。
+
+  Manifest 需要配套的 provider（由 Lead 添加，见 AndroidManifest application 内）：
+  <provider
+      android:name="androidx.core.content.FileProvider"
+      android:authorities="${applicationId}.fileprovider"
+      android:exported="false"
+      android:grantUriPermissions="true">
+      <meta-data
+          android:name="android.support.FILE_PROVIDER_PATHS"
+          android:resource="@xml/file_paths" />
+  </provider>
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- cacheDir/log-bundles/：日志包 ZIP -->
+    <cache-path
+        name="log_bundles"
+        path="log-bundles/" />
+</paths>

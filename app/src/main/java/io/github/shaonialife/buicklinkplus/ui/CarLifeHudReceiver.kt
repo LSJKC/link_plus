@@ -1,9 +1,9 @@
 /* P4 车机 HUD 广播 → CarLife 导航上行（iAP2 0x5201/0x5202）。
  *
- * 移植自 hybrid63 `inject/src/tl/CarLifeHudReceiver.java`（本项目旧插桩实现）：
- * 原版在宿主里注册普通动态广播接收器，收 CarWith/CarLife 的
+ * 改编自历史参考实现 `tl/CarLifeHudReceiver.java`：
+ * 历史实现在其运行环境中注册普通动态广播接收器，收 CarWith/CarLife 的
  * `carlife_show_hud_info` / `mix_notify_start_navi`，解码成 HUD 快照后交给
- * `CarLifeNav.onHud/onHudStop`。本实现不做任何宿主 Hook，只做普通广播接收，
+ * `CarLifeNav.onHud/onHudStop`。本实现只做普通广播接收，不修改任何第三方应用，
  * 数据统一汇入 `CarLifeNav.submitHud` / `CarLifeNav.stop`（与 CarLife 0x10030、
  * 高德 AMap 两条数据源共用同一条 iAP2 上行与去重逻辑）。
  *
@@ -88,7 +88,7 @@ class CarLifeHudReceiver : BroadcastReceiver() {
         )
     }
 
-    // ---- 兼容 hybrid63 的原版广播 ----
+    // ---- 兼容历史车机/CarWith 的原始广播 ----
 
     /** CarWith/CarLife：`action`=3 停止；否则 navi_turn/remain_distance/total_distance/road_name。 */
     private fun handleLegacyHud(intent: Intent) {
@@ -144,10 +144,10 @@ class CarLifeHudReceiver : BroadcastReceiver() {
         /** 调试注入 action（adb broadcast 灌 HUD 测试数据，见文件头注释）。 */
         const val ACTION_DEBUG_HUD = "io.github.shaonialife.buicklinkplus.CARLIFE_HUD"
 
-        /** hybrid63/BOFF 参考的 CarWith/CarLife HUD 广播。 */
+        /** 历史实车 HUD 广播（CarWith/CarLife）。 */
         const val ACTION_LEGACY_HUD = "carlife_show_hud_info"
 
-        /** hybrid63/BOFF 参考的 CarWith 导航开始/结束广播。 */
+        /** 历史实车 CarWith 导航开始/结束广播。 */
         const val ACTION_LEGACY_NAVI = "mix_notify_start_navi"
 
         const val EXTRA_STOP = "stop"

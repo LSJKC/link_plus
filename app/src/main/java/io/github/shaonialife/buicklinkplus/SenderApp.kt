@@ -19,10 +19,6 @@ class SenderApp : Application() {
             .initialize(this)
         // 先写本次启动标记，让日志导出能排除之前的记录
         DebugFileLog.markSessionStart(this)
-        io.github.shaonialife.buicklinkplus.ui.ScreenDimmer.enabled =
-            getSharedPreferences("settings", Context.MODE_PRIVATE).getBoolean("alwaysOn", false)
-        io.github.shaonialife.buicklinkplus.ui.ScreenDimmer
-            .recoverTimeout(applicationContext)
         Bg.run("media-mute-recover") {
             MediaMuteController.recover(applicationContext) { DebugFileLog.append(this, it) }
         }

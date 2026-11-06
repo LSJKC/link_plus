@@ -848,7 +848,7 @@ class DisplayPanelFragment : SettingsPanelFragment() {
             }
             activeQuality.text =
                 if (profile == null) {
-                    "当前未投屏；目标帧率 ${DisplayPrefs.fps(ctx)} fps"
+                    "当前未连接；目标帧率 ${DisplayPrefs.fps(ctx)} fps"
                 } else {
                     "当前编码：${profile.width} × ${profile.height}（${SessionController.activeScalePercent}%）\n" +
                         "配置码率 ${profile.bitrate / 1000} kbps · 帧率上限 ${SessionController.activeTargetFps} fps\n" +
@@ -1161,6 +1161,8 @@ class DisplayPanelFragment : SettingsPanelFragment() {
                 TouchRouter.moveThrottleMs = ms.toLong()
             }
         }
+        // 触控节流入口已下线（用户不需要）：清掉历史节流值，避免沿用旧偏好
+        TouchRouter.moveThrottleMs = 0L
         refreshSelection = {
             syncingSelection = true
             try {
@@ -1186,96 +1188,41 @@ class DisplayPanelFragment : SettingsPanelFragment() {
             }
         }
         refreshScaleNote()
-        addCarLifeCompositionControls(view, ctx)
+        addCarLifeSafeMargin(view, ctx)
+        stripLegacyDisplaySections(view)
         // 动态滑条也在首次打开时采用所在显示屏的主题
         io.github.shaonialife.buicklinkplus.ui.AppearanceBindings
             .refresh(view)
     }
 
-    /** CarLife 合成相关：壁纸背景开关 + 画面圆角开关（写入 CarLifePrefs） */
-    private fun addCarLifeCompositionControls(
+    /**
+     * 只保留一个「安全区边距」单值入口（写入 CarLifePrefs）。
+     *
+     * 该值由 CarLife 合成器按画布内缩使用，触摸坐标映射跟随同一安全区。
+     */
+    private fun addCarLifeSafeMargin(
         root: View,
         ctx: android.content.Context,
     ) {
         val body = (root as? android.widget.ScrollView)?.getChildAt(0) as? LinearLayout ?: return
         val density = resources.displayMetrics.density
-
-        fun switchCard(
-            title: String,
-            hint: String,
-            checked: Boolean,
-            onChange: (Boolean) -> Unit,
-        ) {
-            val card =
-                LinearLayout(ctx).apply {
-                    orientation = LinearLayout.VERTICAL
-                    val pad = (18 * density).toInt()
-                    setPadding(pad, (14 * density).toInt(), pad, (14 * density).toInt())
-                    setAppearanceBackground(if (isPhonePanel) R.drawable.bg_phone_card else R.drawable.bg_card)
-                }
-            card.addView(
-                TextView(ctx).apply {
-                    text = title
-                    textSize = 15f
-                    setAppearanceTextColor(R.color.m3_on_surface)
-                },
-            )
-            card.addView(
-                TextView(ctx).apply {
-                    text = hint
-                    textSize = 12f
-                    setAppearanceTextColor(R.color.m3_on_var)
-                },
-            )
-            val switch =
-                androidx.appcompat.widget.SwitchCompat(ctx).apply {
-                    isChecked = checked
-                    thumbDrawable =
-                        androidx.core.content.ContextCompat
-                            .getDrawable(ctx, R.drawable.sw_thumb)
-                    trackDrawable =
-                        androidx.core.content.ContextCompat
-                            .getDrawable(ctx, R.drawable.sw_track)
-                }
-            switch.setOnCheckedChangeListener { _, value -> onChange(value) }
-            card.addView(switch, LinearLayout.LayoutParams(-2, -2))
-            body.addView(card, LinearLayout.LayoutParams(-1, -2).apply { topMargin = (10 * density).toInt() })
-        }
-        switchCard(
-            "壁纸背景",
-            "CarLife 画面合成时使用壁纸背景；关闭后使用纯色底",
-            CarLifePrefs.wallpaperEnabled(ctx),
-        ) { enabled ->
-            CarLifePrefs.setWallpaperEnabled(ctx, enabled)
-            hostToast(if (enabled) "壁纸背景已开启" else "壁纸背景已关闭")
-        }
-        switchCard(
-            "画面圆角",
-            "车机画面四角圆角 ${CarLifePrefs.CORNER_RADIUS_ON}dp；关闭为直角",
-            CarLifePrefs.cornerEnabled(ctx),
-        ) { enabled ->
-            CarLifePrefs.setCornerEnabled(ctx, enabled)
-            hostToast(if (enabled) "画面圆角已开启" else "画面圆角已关闭")
-        }
-
-        // CarLife 合成安全区内收边距（独立于 link_plus 旧的四边逐项安全区）
-        val marginCard =
+        val card =
             LinearLayout(ctx).apply {
                 orientation = LinearLayout.VERTICAL
                 val pad = (18 * density).toInt()
                 setPadding(pad, (14 * density).toInt(), pad, (14 * density).toInt())
                 setAppearanceBackground(if (isPhonePanel) R.drawable.bg_phone_card else R.drawable.bg_card)
             }
-        marginCard.addView(
+        card.addView(
             TextView(ctx).apply {
-                text = "安全区边距（CarLife 合成）"
+                text = "安全区边距（画布内缩，dp）"
                 textSize = 15f
                 setAppearanceTextColor(R.color.m3_on_surface)
             },
         )
-        marginCard.addView(
+        card.addView(
             TextView(ctx).apply {
-                text = "画面四周内收，单位 dp；0=不使用安全区"
+                text = "画面四周统一向内收缩；合成器按此留边，触摸坐标同步映射。0 表示不使用安全区。"
                 textSize = 12f
                 setAppearanceTextColor(R.color.m3_on_var)
             },
@@ -1310,8 +1257,36 @@ class DisplayPanelFragment : SettingsPanelFragment() {
                 }
             },
         )
-        marginCard.addView(marginSeek, LinearLayout.LayoutParams(-1, -2).apply { topMargin = (6 * density).toInt() })
-        marginCard.addView(marginValue, LinearLayout.LayoutParams(-1, -2))
-        body.addView(marginCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = (10 * density).toInt() })
+        card.addView(marginSeek, LinearLayout.LayoutParams(-1, -2).apply { topMargin = (6 * density).toInt() })
+        card.addView(marginValue, LinearLayout.LayoutParams(-1, -2))
+        body.addView(card, LinearLayout.LayoutParams(-1, -2).apply { topMargin = (10 * density).toInt() })
+    }
+
+    /**
+     * 移除显示页里重复/下线的旧控件：触摸节流（高级微调卡）与四周边距旧控件。
+     *
+     * 布局文件不允许改，所以在绑定完成后从视图树移除；保留缩放/帧率/码率三个主设置。
+     */
+    private fun stripLegacyDisplaySections(root: View) {
+        val body = (root as? android.widget.ScrollView)?.getChildAt(0) as? LinearLayout ?: return
+        root.findViewById<View>(R.id.displayExtraControls)?.let { extras ->
+            (extras.parent as? android.view.ViewGroup)?.removeView(extras)
+        }
+        if (isPhonePanel) {
+            val toggle = root.findViewById<View>(R.id.phoneAdvancedToggle) ?: return
+            var section: View = toggle
+            while (section.parent !== body && section.parent is android.view.ViewGroup) {
+                section = section.parent as View
+            }
+            if (section.parent === body) body.removeView(section)
+            return
+        }
+        val throttle = root.findViewById<View>(R.id.throttleSeek) ?: return
+        val row = throttle.parent as? android.view.ViewGroup ?: return
+        val index = body.indexOfChild(row)
+        if (index < 0) return
+        if (index + 1 < body.childCount) body.removeViewAt(index + 1)
+        body.removeViewAt(index)
+        if (index - 1 >= 0) body.removeViewAt(index - 1)
     }
 }

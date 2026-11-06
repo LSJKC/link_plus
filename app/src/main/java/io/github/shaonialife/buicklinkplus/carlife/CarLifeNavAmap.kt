@@ -1,6 +1,6 @@
 /*
- * Ported from hybrid63 inject/src/tl/CarLifeNavAmap.java (this project's own prior injected implementation).
- * AIDL interfaces copied from hybrid63 inject/src/com/amap/linksdk/aidldefine/ — see
+ * Adapted from the historical reference implementation's CarLifeNavAmap.java.
+ * AIDL interfaces follow the historical implementation's com/amap/linksdk/aidldefine/ — see
  * app/src/main/aidl/com/amap/linksdk/aidldefine/{ILinkSdkControl,ILinkSdkCallback}.aidl
  * (包名必须保持 com.amap.linksdk.aidldefine，否则跨进程 binder descriptor 对不上).
  */
@@ -25,12 +25,12 @@ import org.json.JSONObject
  * 高德 AMap LinkSDK 结构化导航源（P4 可选第二数据源）。
  *
  * 背景：CarLife `0x10030` 只对 CarLife 内置百度导航有效；手机里用高德导航时 CarLife 不发 `0x10030`。
- * 旧工程（hybrid63）因此接了 AMap LinkSDK（车机/眼镜用的进程间接口）：绑定高德 `AmapLinkService` →
+ * 历史参考实现因此接了 AMap LinkSDK（车机/眼镜用的进程间接口）：绑定高德 `AmapLinkService` →
  * `authenticate()` → `registerListener()` → 每 1250ms 轮换 `execute(cmd=5/7)`，从回调 JSON 里解析出
  * 机动、剩余距离/时间，再交给 [CarLifeNav] 编码成 iAP2 `0x5201/0x5202`。
  *
- * 真机依据：旧工程审计记录「导航：amap connected/register；nav iAP2 0x5201」；绑定参数原样保留
- * （API key 留空也能连上，旧工程实测如此）。
+ * 真机依据：历史实车记录「导航：amap connected/register；nav iAP2 0x5201」；绑定参数原样保留
+ * （API key 留空也能连上，历史实车实测如此）。
  *
  * 使用：
  * ```
@@ -49,7 +49,7 @@ import org.json.JSONObject
  *   直接 `bindService`（显式组件），拿不到服务时由 `bindService` 返回 false。
  * - 回调线程是高德 binder 线程，[onHud] 里如果要做主线程 UI 工作请自行切线程；[CarLifeNav.submitHud]
  *   与 iAP2 发送侧都是线程安全的。
- * - 尚未实车验证（当前无设备）；先保证逻辑与旧工程一致、可编译，字段解析失败只记日志不抛。
+ * - 尚未实车验证（当前无设备）；先保证逻辑与历史实现一致、可编译，字段解析失败只记日志不抛。
  */
 object CarLifeNavAmap {
     private const val TAG = "CarLifeNavAmap"
@@ -75,7 +75,7 @@ object CarLifeNavAmap {
     private var handler: Handler? = null
     private var poll: Runnable? = null
 
-    /** 导航 HUD 快照回调（turn = BOX OFF HUD turn 索引，remain/total 为米）。 */
+    /** 导航 HUD 快照回调（turn = 历史 HUD turn 索引，remain/total 为米）。 */
     @Volatile
     var onHud: ((turn: Int, remainMeters: Int, totalMeters: Int, road: String) -> Unit)? = null
 
@@ -379,7 +379,7 @@ object CarLifeNavAmap {
         }
     }
 
-    /** AMap maneuverID → BOX OFF HUD turn 索引（原样移植旧工程 mapHudTurn）。 */
+    /** AMap maneuverID → 历史 HUD turn 索引（与历史参考实现的 mapHudTurn 一致）。 */
     private fun mapHudTurn(action: Int): Int =
         when (action) {
             2, 3 -> 7 // 左

@@ -1,9 +1,9 @@
 /* Adapted from:
  *  - CarPToCarL carlife/CarLifeAudioSink.kt (MIT, Copyright (c) 2026 lizhihua), commit 7b729fb:
  *    媒体/TTS 分流职责、格式宣告、音乐暂停残留 PCM 截断、电平/带宽诊断日志；
- *  - hybrid63 inject/src/tl/CarLifeAudio.java（同一作者的旧注入实现，只读参考）：
+ *  - 历史参考实现（同一作者的历史音频实现，只读参考）：
  *    媒体 ring + TTS 独立 ring、44.1k→48k 跨包相位连续线性重采样、TTS duck/mix；
- *  - hybrid63 CarLifeAudioPipe.java 的 1408B 包/预灌/实时节拍，已移植到 CarLifeAudioPipe.kt。
+ *  - 历史参考实现的 CarLifeAudioPipe 的 1408B 包/预灌/实时节拍，已实现为 CarLifeAudioPipe.kt。
  * link_plus 适配点：原参考实现直接调 AudioSender.feedPcm（内部再对齐/累积），本仓改为
  * CarLifeAudioPipe 按 1408B 实时包输出，调用 AudioSender.feedExternalPcm（外部 PCM 模式）。 */
 package io.github.shaonialife.buicklinkplus.carlife
@@ -354,7 +354,7 @@ class CarLifeAudioSink(
     // ---- 水泵回调：媒体读包 / TTS 混音 / 送 AudioSender ----
 
     /**
-     * 从媒体 ring 取一段并统一成 48kHz 立体声（hybrid63 `CarLifeAudio.fill` 移植）。
+     * 从媒体 ring 取一段并统一成 48kHz 立体声（历史参考实现 `CarLifeAudio.fill` 的实现）。
      *
      * @return 实际写入字节数（4 的整数倍）；0 = 当前无数据
      */
@@ -424,7 +424,7 @@ class CarLifeAudioSink(
         }
 
     /**
-     * TTS duck/mix（hybrid63 `CarLifeAudio.mixTts` 移植）：媒体 45% + TTS 90%，
+     * TTS duck/mix（历史参考实现 `CarLifeAudio.mixTts` 的实现）：媒体 45% + TTS 90%，
      * 只消费本包实际用到的 TTS 源帧，剩余留到下一包；只在本包有 TTS 时改媒体采样。
      *
      * @return 本包混入的采样帧数（0 = 本包无 TTS）
@@ -553,7 +553,7 @@ class CarLifeAudioSink(
     }
 
     /**
-     * 简单环形字节缓冲（hybrid63 `CarLifeAudio` 里 ring/head/tail/count 的 Kotlin 版）。
+     * 简单环形字节缓冲（历史参考实现 `CarLifeAudio` 里 ring/head/tail/count 的 Kotlin 版）。
      */
     private class ByteRing(
         private val capacity: Int,
@@ -564,7 +564,7 @@ class CarLifeAudioSink(
         var count = 0
             private set
 
-        /** 写入；空间不足时丢弃最旧字节（低延迟优先，与 hybrid63 一致）。 */
+        /** 写入；空间不足时丢弃最旧字节（低延迟优先，与历史参考实现一致）。 */
         fun write(
             src: ByteArray,
             offset: Int,
@@ -600,7 +600,7 @@ class CarLifeAudioSink(
             return out
         }
 
-        /** 把未消费的尾部放回队首（覆盖式，对应 hybrid63 pushFront；超容量时只留最新字节）。 */
+        /** 把未消费的尾部放回队首（覆盖式，对应历史参考实现的 pushFront；超容量时只留最新字节）。 */
         fun pushFront(
             src: ByteArray,
             offset: Int,
@@ -654,7 +654,7 @@ class CarLifeAudioSink(
         /** TTS 只在这段时间内收到过 PCM 才混入（避免旧播报残留被反复混）。 */
         const val TTS_MIX_WINDOW_MS = 400L
 
-        /** TTS 活跃时媒体 duck 到 45%，TTS 90%（hybrid63 实机调参）。 */
+        /** TTS 活跃时媒体 duck 到 45%，TTS 90%（历史实车调参）。 */
         const val MEDIA_DUCK = 0.45
         const val TTS_GAIN = 0.90
 

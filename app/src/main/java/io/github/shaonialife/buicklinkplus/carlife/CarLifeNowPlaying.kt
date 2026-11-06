@@ -1,11 +1,10 @@
 /*
- * Ported/adapted from:
+ * Adapted from:
  *  - CarPToCarL app/src/main/java/io/github/shaonialife/carptocar/iap2/Iap2NowPlaying.kt
  *    (MIT, Copyright (c) 2026 lizhihua; commit 7b729fb) — 0x5001 NowPlayingUpdate 字段模型/编码；
  *    注意参考实现里曾把专辑名写到 0x001A 是历史 bug，这里按官方字段表：album = 0x0006，
  *    0x001A = u8 artworkTransferID（封面传输标识，不是专辑名）。
- *  - hybrid63 inject/src/tl/CarLifeMedia.java（本项目旧插桩实现；只用来确认原版 iAP2 0x5001
- *    只发文本属性、albumArt 不进消息体）。
+ *  - 历史参考实现（只用来确认历史 iAP2 0x5001 只发文本属性、albumArt 不进消息体）。
  *  - carvex-android protocol-carplay core/NowPlayingUpdate.kt（字段 ID / 订阅筛选语义交叉核对）。
  *
  * iAP2 0x5001 官方无歌词字段（不要写歌词）；封面图片不进消息体，只走 file-transfer + field 0x001A。
@@ -16,6 +15,7 @@ package io.github.shaonialife.buicklinkplus.carlife
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Log
+import androidx.core.graphics.scale
 import io.github.shaonialife.buicklinkplus.airplay.NowPlayingSubscription
 import io.github.shaonialife.buicklinkplus.airplay.VirtualIap2Link
 import io.github.shaonialife.buicklinkplus.iap2.Iap2Csm
@@ -51,7 +51,7 @@ import java.util.concurrent.Executors
  *
  * CarLifeMediaInfo.albumArt 解码后居中裁方、缩到 768×768、JPEG 质量 85，缓存 [PreparedArtwork] 并打
  * `NOWPLAYING:` 日志。但 **0x5001 不带 field 26**：封面必须走 iAP2 file-transfer 会话，会话号 k1 是
- * 车机动态给的（不能硬编码 12），且 SETUP/START/DATA/SUCCESS 的消息号/时序还没有真车证据（旧工程
+ * 车机动态给的（不能硬编码 12），且 SETUP/START/DATA/SUCCESS 的消息号/时序还没有真车证据（历史实现
  * 也没实现发送端）。拿不到 k1 / 传输失败时按坑位要求退化为"只发元数据"，不声明 artwork。
  *
  * ## 接线（SessionController / CarLifeScreenSource，Lead 负责）
@@ -545,7 +545,7 @@ object CarLifeNowPlaying {
         val left = (decoded.width - side) / 2
         val top = (decoded.height - side) / 2
         val square = Bitmap.createBitmap(decoded, left, top, side, side)
-        val scaled = Bitmap.createScaledBitmap(square, ARTWORK_SIZE_PX, ARTWORK_SIZE_PX, true)
+        val scaled = square.scale(ARTWORK_SIZE_PX, ARTWORK_SIZE_PX)
         val jpeg =
             ByteArrayOutputStream().use { out ->
                 scaled.compress(Bitmap.CompressFormat.JPEG, ARTWORK_JPEG_QUALITY, out)
@@ -561,7 +561,7 @@ object CarLifeNowPlaying {
      * 封面**不进 0x5001 消息体**（官方规范：0x5001 只带 u8 artworkTransferID）；图片走 iAP2
      * file-transfer 会话（SETUP/START/DATA/SUCCESS）。会话号 k1 由车机动态给（AirPlay /info 或
      * 0x4301 无线组，真车可能不是 12，绝不能硬编码），本版本还没接线；且这些文件传输消息的
-     * 消息号/时序没有真车证据（旧工程 CarLifeMedia.java 也没实现，只把 albumArt 画在手机本地媒体卡）。
+     * 消息号/时序没有真车证据（历史参考实现 CarLifeMedia.java 也没实现，只把 albumArt 画在手机本地媒体卡）。
      * 因此这里只缓存 768×768 JPEG + 打日志，返回 null → 0x5001 不带 field 26（失败即退化）。
      * 后续接入点：拿到 k1 后在这里实现 file-transfer，成功后再返回 artworkTransferID。
      */

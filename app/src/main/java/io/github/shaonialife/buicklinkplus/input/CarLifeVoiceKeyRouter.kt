@@ -1,6 +1,6 @@
 /* P4 车机语音键 → CarLife 硬键（0x68008）路由。
  *
- * 移植自 CarPToCarL `carlife/VoiceKeyRouter.kt`（MIT，同作者）的状态机：
+ * 改编自 CarPToCarL `carlife/VoiceKeyRouter.kt`（MIT，同作者）的状态机：
  * - AirPlay 事件通道 `/command` 的 `requestSiri`（siriAction：1=预热 / 2=按下 / 3=松开）
  *   是多数车机方向盘语音键的真实通路（参考实现实测：HID Consumer 描述符里没有 Voice Command）；
  * - HID Consumer `0xCF`（Voice Command usage）作为少数车机的兜底通路。

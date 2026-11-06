@@ -19,11 +19,11 @@ class SettingsSearchTest {
     @Test fun commonTermsResolveToStablePanels() {
         assertEquals(SettingsMenus.DISPLAY, SettingsMenus.search("码率").single().target)
         assertEquals(SettingsMenus.DISPLAY, SettingsMenus.search(" FPS ").single().target)
-        assertEquals(SettingsMenus.DISPLAY, SettingsMenus.search("安全区 圆角").single().target)
+        assertEquals(SettingsMenus.DISPLAY, SettingsMenus.search("安全区 边距").single().target)
         assertEquals(SettingsMenus.AUDIO, SettingsMenus.search("TTS 播报").single().target)
         assertEquals(SettingsMenus.CARLIFE, SettingsMenus.search("端口 自检").single().target)
         assertEquals(SettingsMenus.CONNECTION, SettingsMenus.search("蓝牙 MAC").single().target)
-        assertEquals(SettingsMenus.APPEARANCE, SettingsMenus.search("内置壁纸").single().target)
+        assertEquals(SettingsMenus.APPEARANCE, SettingsMenus.search("壁纸 圆角").single().target)
         assertEquals(SettingsMenus.ABOUT, SettingsMenus.search("日志 导出").single().target)
         assertTrue(SettingsMenus.search("无法匹配的词").isEmpty())
         assertTrue(SettingsMenus.search("  ").isEmpty())

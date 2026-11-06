@@ -15,6 +15,9 @@ object DebugFileLog {
     /** 启动标记写入文件，默认只导出最后一次启动后的日志，截断后仍可识别 */
     const val SESSION_MARKER = "===== Buick Link＋ 进程启动（本次日志起点）====="
 
+    /** 日志文件名（filesDir 下），LogBundle 打包历史日志时按它识别。 */
+    const val LOG_FILE_NAME = "main_debug.log"
+
     /** 进程启动时写入日志标记，重复调用时以最后一次为准 */
     fun markSessionStart(context: Context) {
         append(context, SESSION_MARKER)
@@ -26,7 +29,7 @@ object DebugFileLog {
         currentSessionOnly: Boolean,
     ): String? =
         runCatching {
-            val text = File(context.filesDir, "main_debug.log").readText(Charsets.UTF_8)
+            val text = File(context.filesDir, LOG_FILE_NAME).readText(Charsets.UTF_8)
             LogRedactor.redact(if (currentSessionOnly) currentSessionSlice(text) else text)
         }.getOrNull()
 
@@ -42,7 +45,7 @@ object DebugFileLog {
     ) {
         try {
             synchronized(lock) {
-                val file = File(context.filesDir, "main_debug.log")
+                val file = File(context.filesDir, LOG_FILE_NAME)
                 // 日志截断后补写启动标记，导出时仍能区分本次启动
                 if (file.length() > 2_000_000) {
                     file.delete()

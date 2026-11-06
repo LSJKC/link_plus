@@ -1,5 +1,5 @@
-// Ported from hybrid63 inject/src/com/amap/linksdk/aidldefine/ILinkSdkControl.java
-// (this project's own prior injected source; AMap LinkSDK wearable/glass service interface).
+// Adapted from the historical reference implementation's ILinkSdkControl.java
+// (AMap LinkSDK wearable/glass service interface).
 //
 // 包名必须保持 com.amap.linksdk.aidldefine：AIDL 生成的 binder descriptor 由「包名+接口名」
 // 决定，高德 App 侧的 Stub.onTransact 会 enforceInterface("com.amap.linksdk.aidldefine.ILinkSdkControl")。

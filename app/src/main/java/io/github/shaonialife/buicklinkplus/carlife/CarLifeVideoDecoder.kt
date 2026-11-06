@@ -1,4 +1,4 @@
-/* Adapted from the prior hybrid63 decode port com/turtlelink/carlife/CarLifeVideoDecoder.java
+/* Adapted from the historical reference implementation's CarLifeVideoDecoder.java
  * (itself based on CarPToCarL/H264 decode behaviour, MIT, Copyright (c) 2026 lizhihua):
  * kept the proven decode path (bounded non-blocking queue, keyframe gating, CSD version
  * recreate, INFO_OUTPUT_FORMAT_CHANGED, surface-output rendering) and dropped the

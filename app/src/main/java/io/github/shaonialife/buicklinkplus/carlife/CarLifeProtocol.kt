@@ -1,10 +1,10 @@
-// Ported from CarPToCarL carlife/CarLifeProtocol.kt (MIT, Copyright (c) 2026 lizhihua), commit 7b729fb.
+// Adapted from CarPToCarL carlife/CarLifeProtocol.kt (MIT, Copyright (c) 2026 lizhihua), commit 7b729fb.
 package io.github.shaonialife.buicklinkplus.carlife
 
 /**
  * CarLife 车机端（HU）协议常量与小工具。
  *
- * 协议细节来自 2026-10-23 实机验证（见 docs/carlife-hijack-findings.md）：
+ * 协议细节来自 2026-10-23 实机验证（见 docs/carlife-mechanism.md）：
  * 手机端（MD）监听 7 个 TCP 端口，车机端主动连接；控制通道 8 字节头，
  * 其余通道 12 字节头；protobuf 手写编码，不引入 protobuf 运行时。
  */
@@ -49,7 +49,7 @@ internal object CarLifeProtocol {
     /**
      * 帧率变更命令候选 id。
      *
-     * 字节码铁证（2026-10-24 第四轮逆向）：`Recorder.changeFrameRate` 的范围判定是
+     * 协议实测（2026-10-24 第四轮分析）：`Recorder.changeFrameRate` 的范围判定是
      * `clamp(frame, 3, 60)`（const/16 #3 / const/16 #60），**不是旧结论的 3~30**。
      * 所以这里把上限修正为 60——98316 直接发 60 是合法且会被引擎采纳的。
      */
@@ -123,7 +123,7 @@ internal object CarLifeProtocol {
      *
      * 为什么双指必须走这条路：单点消息（0x68002/3/4）的负载是
      * `CarlifeTouchSinglePoint{x,y}`，**没有指针概念**，第二根手指无从表达——
-     * 旧实现直接把 slot 1 丢掉，双指缩放自然按不出来。
+     * 历史实现直接把 slot 1 丢掉，双指缩放自然按不出来。
      */
     object TouchAction {
         const val DOWN = 0
@@ -203,7 +203,7 @@ internal object CarLifeProtocol {
     //   0x40003 长度 1280 → **裸 PCM（导航播报数据）**
     // 编号与媒体通道**不对应**（媒体数据包是 0x30006，TTS 却在 0x40003 上带负载），
     // 所以这里不照搬编号做枚举，只认两条铁律：**有负载就是 PCM，长度 0 就是开停信号**。
-    // 旧实现把 0x4xxxx 全丢进「暂不处理」，症状正是「音乐有声、地图导航没声」。
+    // 历史实现把 0x4xxxx 全丢进「暂不处理」，症状正是「音乐有声、地图导航没声」。
     const val TTS_PKG_INIT = 0x40001
 
     /** TTS 未宣告格式时的兜底采样率（导航播报常见 16k 单声道，AudioSender 会重采样到 48k）。 */
@@ -327,7 +327,7 @@ internal object CarLifeProtocol {
     /**
      * 特征配置：CONNECT_TYPE + I 帧间隔 + 分辨率直通 + 歌词支持。
      *
-     * 2026-10-25 逆向 `FeatureConfigManager.excute()`（手机引擎）实证两条关键开关：
+     * 2026-10-25 对引擎 `FeatureConfigManager.excute()` 的行为实测确认两条关键开关：
      *  - `DISABLE_RESOLUTION_OPTION = 1` → `Recorder.useVehicleResolution = true`：
      *    引擎不再按宽度把 98311 上报的车机分辨率分档（1412 会被压成 1280×720），
      *    而是直接用 `mVehiclWidth × mVehiclHigh`（即 98311 的真实宽高）编码，
@@ -346,9 +346,9 @@ internal object CarLifeProtocol {
         items += pbString(1, "CONNECT_TYPE") + pbVarint(2, connectType)
         items += pbString(1, "DISABLE_RESOLUTION_OPTION") + pbVarint(2, if (useVehicleResolution) 1 else 0)
         items += pbString(1, "MEDIA_LYRIC_SUPPORT") + pbVarint(2, if (mediaLyricSupport) 1 else 0)
-        // 实车日志（旧工程 vs 本工程）实证：这三个键决定引擎媒体 PCM 是否直接给 48K。
+        // 实车日志（历史参考实现 vs 本工程）实证：这三个键决定引擎媒体 PCM 是否直接给 48K。
         // 不配置时引擎按 44100 出，而 AirPlay 音频编码器按 48000，必须重采样、容易刺啦；
-        // 旧工程 2026-10-24 起带这 3 个键后真机媒体格式变为 48000Hz 2ch。
+        // 历史参考实现 2026-10-24 起带这 3 个键后真机媒体格式变为 48000Hz 2ch。
         items += pbString(1, "MEDIA_SAMPLE_RATE") + pbVarint(2, 1)
         items += pbString(1, "FOCUS_UI") + pbVarint(2, 1)
         items += pbString(1, "VOICE_MIC") + pbVarint(2, 1)
@@ -361,7 +361,7 @@ internal object CarLifeProtocol {
     /**
      * 车机 → 手机的编码参数申请（98311）。
      *
-     * 8.8.5 的 `CarlifeVideoEncoderInfo` 比旧版 proto 多 6 个字段（逆向 `writeTo` 实证）：
+     * 8.8.5 的 `CarlifeVideoEncoderInfo` 比旧版 proto 多 6 个字段（`writeTo` 协议实测）：
      * ```
      * 1 width  int32 | 2 height int32 | 3 frameRate int32
      * 4 saveAreaWidth int32 | 5 saveAreaHeight int32 | 6 saveAreaX int32 | 7 saveAreaY int32

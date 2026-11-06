@@ -1,23 +1,24 @@
-/* Adapted from hybrid63 inject/src/tl/CarLifeAudioPipe.java (prior port of CarPToCarL audio
- * behaviour, MIT, Copyright (c) 2026 lizhihua): fixed 1408B packets, 8-packet prefill and
- * real-time deadline pacing. link_plus has no ParcelFileDescriptor encoder pipe, so the
- * writer target is a packet callback (CarLifeAudioSink → AudioSender external PCM mode). */
+/* Adapted from the historical reference implementation's CarLifeAudioPipe.java (based on
+ * CarPToCarL audio behaviour, MIT, Copyright (c) 2026 lizhihua): fixed 1408B packets,
+ * 8-packet prefill and real-time deadline pacing. link_plus has no ParcelFileDescriptor
+ * encoder pipe, so the writer target is a packet callback
+ * (CarLifeAudioSink → AudioSender external PCM mode). */
 package io.github.shaonialife.buicklinkplus.carlife
 
 /**
- * CarLife PCM → 固定 1408B 实时包的水泵（hybrid63 `CarLifeAudioPipe.java` 的 Kotlin 移植）。
+ * CarLife PCM → 固定 1408B 实时包的水泵（历史参考实现 `CarLifeAudioPipe.java` 的 Kotlin 版本）。
  *
- * hybrid63 把 CarLife 引擎 PCM 写进原版音频编码器读取的 `ParcelFileDescriptor` 管道：
- * 原版编码器每次读 1408B（352 采样帧、16bit 立体声），首包前要预灌 ~59ms 才能跨过它的
+ * 历史参考实现把 CarLife 引擎 PCM 写进其音频编码器读取的 `ParcelFileDescriptor` 管道：
+ * 历史参考实现的编码器每次读 1408B（352 采样帧、16bit 立体声），首包前要预灌 ~59ms 才能跨过它的
  * prime 门槛。link_plus 没有这条编码器管道（音频由 [io.github.shaonialife.buicklinkplus.audio.AudioSender]
  * 自己封 RTP 发送），所以本类保留同样的**数据形状与节拍**，只把「写管道」换成
  * [writePacket] 回调：
  *
  * - 每个包固定 [CHUNK_BYTES] = 1408B（352 帧 @ 48kHz 立体声 16bit，约 7.33ms）；
- * - 起播先预灌 [PREFILL_PACKETS] 包（约 59ms），与 hybrid63 一致，避免接收端/编码器
+ * - 起播先预灌 [PREFILL_PACKETS] 包（约 59ms），与历史参考实现一致，避免接收端/编码器
  *   判空闲把首批音频丢掉；
  * - 之后按 `packetNanos = 1408 × 1e9 / (rate × 4)` 的**绝对时间线**发（纳秒累加，避免
- *   hybrid63 里 `packetNs / 1_000_000` 整除带来的 4.7% 偏快）；进程卡顿超过
+ *   历史实现里 `packetNs / 1_000_000` 整除带来的 4.7% 偏快）；进程卡顿超过
  *   [MAX_CATCH_UP_NANOS] 时只跳过错过的节拍，不突发补包；
  * - 每包先向 [readSource] 取 PCM（可以一次取不满，循环补齐），取不满的尾部补零——只有
  *   「真的取不到 PCM」时才补零，而不是无脑塞静音；随后 [mixTts] 把 TTS 播报混进本包。
@@ -42,7 +43,7 @@ class CarLifeAudioPipe(
     private val log: (String) -> Unit = {},
 ) {
     companion object {
-        /** 与 hybrid63 原版编码器每次读取的字节数一致（352 采样帧）。 */
+        /** 与历史参考实现的编码器每次读取的字节数一致（352 采样帧）。 */
         const val CHUNK_BYTES = 1408
 
         /** 立体声 16bit：每采样帧 4 字节。 */
@@ -54,7 +55,7 @@ class CarLifeAudioPipe(
         /** 目标采样率：CarLife 引擎 44.1k/48k 统一到 48k（车机音频档位也以 48k PCM 为主）。 */
         const val TARGET_SAMPLE_RATE = 48_000
 
-        /** 起播预灌包数：8 × 7.33ms ≈ 59ms，跨过 hybrid63 原版编码器的 80ms prime 前段。 */
+        /** 起播预灌包数：8 × 7.33ms ≈ 59ms，跨过历史参考实现编码器的 80ms prime 前段。 */
         private const val PREFILL_PACKETS = 8
 
         /** 卡顿后允许落后多少：超过只跳过错过的节拍，绝不突发补包（会和接收端时钟打架）。 */
@@ -119,7 +120,7 @@ class CarLifeAudioPipe(
         try {
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_AUDIO)
         } catch (_: Throwable) {
-            // 调优先级失败不影响数据面（与 hybrid63 一致）。
+            // 调优先级失败不影响数据面（与历史参考实现一致）。
         }
         val packet = ByteArray(CHUNK_BYTES)
         val scratch = ByteArray(CHUNK_BYTES)
@@ -127,7 +128,7 @@ class CarLifeAudioPipe(
         val packetNanos = CHUNK_BYTES.toLong() * 1_000_000_000L / (sampleRate.coerceAtLeast(1).toLong() * BYTES_PER_FRAME)
         var nextAtNanos = System.nanoTime()
         try {
-            // 预灌 8 包（约 59ms）：跨过原版编码器的 prime 门槛后才开始按实时节拍送。
+            // 预灌 8 包（约 59ms）：跨过历史参考实现编码器的 prime 门槛后才开始按实时节拍送。
             for (index in 0 until PREFILL_PACKETS) {
                 if (!running) return
                 if (!emitPacket(packet, scratch)) return

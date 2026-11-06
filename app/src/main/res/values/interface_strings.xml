@@ -28,7 +28,7 @@
     <string name="ui_frame_rate_60" formatted="false">"60 fps"</string>
     <string name="ui_frame_rate_description" formatted="false">"连接中可在已协商上限内切换；更高帧率需重新连接且车机支持"</string>
     <string name="ui_video_bitrate_next_connection" formatted="false">"画面质量 · 视频码率（下次连接生效）"</string>
-    <string name="ui_touch_injection_throttle" formatted="false">"触摸注入节流"</string>
+    <string name="ui_touch_injection_throttle" formatted="false">"触摸节流"</string>
     <string name="ui_touch_injection_description" formatted="false">"交互滞后但帧率正常（事件派发堆积）时调高试验；拖动即时生效"</string>
     <string name="ui_dock_width" formatted="false">"栏宽度"</string>
     <string name="ui_dock_scale_description" formatted="false">"整条 Dock（图标/时钟/文字）等比缩放，50%–100%；保存后下次连接起效"</string>

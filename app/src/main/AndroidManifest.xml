@@ -25,15 +25,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <!-- 读取蜂窝网络类型（5G/4G），用于 dock 顶部的手机信号显示 -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
-    <!-- 音频通道：AudioPlaybackCapture（捕获本机媒体/导航声音上车）必需 -->
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- 音频通道激活时静音手机媒体音量（声音只从车机出），断开恢复 -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-    <!-- 暗幕（替代息屏）需要；系统「显示在其他应用上层」列表只收录声明本权限的应用 -->
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
     <uses-feature android:name="android.hardware.wifi" android:required="false" />
@@ -48,6 +43,21 @@
         <package android:name="com.tencent.qqmusiccar" />
         <package android:name="com.kugou.android.auto" />
         <package android:name="com.netease.cloudmusic.iot" />
+        <!-- CarLife 手机端：荣耀/官方及其它 OEM 引擎/宿主包（引擎无桌面入口时的兜底可见性） -->
+        <package android:name="com.baidu.carlife" />
+        <package android:name="com.baidu.carlife.honor" />
+        <package android:name="com.hihonor.auto" />
+        <package android:name="com.honor.auto" />
+        <package android:name="com.baidu.carlife.xiaomi" />
+        <package android:name="com.miui.carlink" />
+        <package android:name="com.baidu.carlife.oppo" />
+        <package android:name="com.oplus.ocar" />
+        <package android:name="com.baidu.carlife.vivo" />
+        <package android:name="com.vivo.car.networking" />
+        <package android:name="com.baidu.carlife.samsung" />
+        <package android:name="com.samsung.android.carlink" />
+        <package android:name="com.baidu.carlife.lenovo" />
+        <package android:name="com.baidu.carlife.motorola" />
         <!-- 应用桌面需要枚举全部可启动应用（Android 11+ 包可见性） -->
         <intent>
             <action android:name="android.intent.action.MAIN" />
@@ -100,7 +110,7 @@
         <service
             android:name=".service.CarPlayService"
             android:exported="false"
-            android:foregroundServiceType="connectedDevice|mediaProjection" />
+            android:foregroundServiceType="connectedDevice" />
 
         <!-- link_plus 原桌面页（Dock/Grid/MapStatus）与车机双栏设置已下线：
              对应类保留在源码中供后续清理，但不再注册为 Activity -->
@@ -115,6 +125,17 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
+
+        <!-- 日志包（ZIP）分享：只暴露 cacheDir/log-bundles/，不暴露整个缓存/文件目录 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
     </application>
 </manifest>
