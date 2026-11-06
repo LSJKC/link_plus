@@ -20,7 +20,6 @@ import io.github.shaonialife.buicklinkplus.media.WeatherState
 import io.github.shaonialife.buicklinkplus.session.ConnectionPreflight
 import io.github.shaonialife.buicklinkplus.session.SessionController
 import io.github.shaonialife.buicklinkplus.ui.CarAppearancePrefs
-import io.github.shaonialife.buicklinkplus.ui.WallpaperStore
 import io.github.shaonialife.buicklinkplus.ui.setAppearanceBackground
 import io.github.shaonialife.buicklinkplus.ui.setAppearanceImageResource
 import io.github.shaonialife.buicklinkplus.ui.setAppearanceImageTint
@@ -34,7 +33,7 @@ class PhoneHomeDashboard(
     private val onOpen: (Int) -> Unit,
     onTarget: () -> Unit,
     onMac: () -> Unit,
-    onWallpaper: () -> Unit,
+    onCarLifeAction: () -> Unit,
 ) {
     private val density = context.resources.displayMetrics.density
     private val preparation: TextView
@@ -45,15 +44,13 @@ class PhoneHomeDashboard(
     private val target: TextView
     private val carLife: TextView
     private val mac: TextView
-    private val wallpaper: TextView
 
     init {
         parent.setPadding(0, dp(12), 0, 0)
-        // 用户指定顺序：CarLife → 本机蓝牙 MAC → 目标车辆 → 壁纸
-        carLife = row(parent, "CarLife", R.drawable.ic_screen_rotation) { onOpen(SettingsMenus.CARLIFE) }
+        // 用户指定顺序：CarLife → 本机蓝牙 MAC → 目标车辆
+        carLife = row(parent, "CarLife", R.drawable.ic_screen_rotation) { onCarLifeAction() }
         mac = row(parent, "本机蓝牙 MAC", R.drawable.ic_bluetooth) { onMac() }
         target = row(parent, "目标车辆", R.drawable.ic_car, onTarget)
-        wallpaper = row(parent, "壁纸", R.drawable.ic_wallpaper, onWallpaper)
         heading(parent, R.string.home_prepare)
         preparation = row(parent, "基础环境", R.drawable.ic_app_settings) { onOpen(SettingsMenus.PERMISSIONS) }
         heading(parent, R.string.home_shortcuts)
@@ -113,8 +110,10 @@ class PhoneHomeDashboard(
         session = row(parent, "画面与声音", R.drawable.ic_menu_display) { onOpen(SettingsMenus.CONNECTION) }
         heading(parent, R.string.home_travel)
         music = row(parent, "音乐 · 暂无数据", R.drawable.ic_music) { onOpen(SettingsMenus.AUDIO) }
-        navigation = row(parent, "导航 · 暂无数据", R.drawable.ic_menu_map) { onOpen(SettingsMenus.MAP) }
+        navigation = row(parent, "导航 · 暂无数据", R.drawable.ic_menu_map) { onOpen(SettingsMenus.CONNECTION) }
         weather = row(parent, "天气 · 暂无数据", R.drawable.ic_brightness) { onOpen(SettingsMenus.CAR_APPEARANCE) }
+        // CarLife 模式下左列小组件不渲染，首页天气行需要主动补一次刷新（原版仅车机左列渲染时刷新）
+        WeatherState.ensureFresh(context, CarAppearancePrefs.weatherCity(context), SystemClock.elapsedRealtime())
         refresh()
     }
 
@@ -123,11 +122,13 @@ class PhoneHomeDashboard(
         val snapshot = SessionController.snapshot()
         target.text =
             TargetDevicePrefs.get(context)?.name?.takeIf { it.isNotBlank() } ?: "选择你的车机，开启无线连接"
+        val (carLifeStatus, carLifeHint) = SessionController.carLifeWaitStatus()
         carLife.text =
-            if (SessionController.isSessionRunning()) {
-                "已连接 · 点这里查看引擎状态/重连/日志诊断"
-            } else {
-                "先在手机打开 CarLife+ → 无线连接，再回首页点「启动连接」"
+            when {
+                carLifeStatus == "CarLife+ 已连接" -> "已连接 · 点这里查看状态/诊断"
+                carLifeStatus == "未连接" -> "未连接 · $carLifeHint"
+                carLifeStatus.startsWith("会话运行中") -> "$carLifeStatus · $carLifeHint"
+                else -> "$carLifeStatus · 切回本应用会自动接入，或点此立即重试"
             }
         val overrideMac = DeviceIdentity.overrideBluetoothMac(context)
         val resolvedMac = DeviceIdentity.cachedBluetoothMac()
@@ -137,14 +138,8 @@ class PhoneHomeDashboard(
                 resolvedMac != null -> "自动解析 $resolvedMac"
                 else -> "未解析（占位 ${DeviceIdentity.PLACEHOLDER_MAC}），车机可能不邀请；点此手填"
             }
-        val hasWallpaper = WallpaperStore.userWallpaperFile(context) != null
-        wallpaper.text =
-            if (hasWallpaper) {
-                "已设置壁纸 · 点此打开壁纸编辑器（内置壁纸 / 自定义图片 / 校准）"
-            } else {
-                "默认背景 · 点此选择内置壁纸或自定义图片"
-            }
         val report = ConnectionPreflight.inspect(context, SessionController.audioEnabledForSession).beforeIdentity()
+
         val ready = report.checks.count { it.ready }
         preparation.text =
             context.getString(

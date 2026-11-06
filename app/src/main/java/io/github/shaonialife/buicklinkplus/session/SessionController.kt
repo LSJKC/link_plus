@@ -15,6 +15,7 @@ import io.github.shaonialife.buicklinkplus.bt.TargetDevicePrefs
 import io.github.shaonialife.buicklinkplus.capture.CarLifeScreenSource
 import io.github.shaonialife.buicklinkplus.capture.ScreenSource
 import io.github.shaonialife.buicklinkplus.carlife.CarLifeAudioSink
+import io.github.shaonialife.buicklinkplus.carlife.CarLifeAutoAttach
 import io.github.shaonialife.buicklinkplus.carlife.CarLifeGpsBridge
 import io.github.shaonialife.buicklinkplus.carlife.CarLifeNav
 import io.github.shaonialife.buicklinkplus.carlife.CarLifeNavAmap
@@ -166,6 +167,9 @@ object SessionController {
     fun ensure(context: Context) {
         appContext = context.applicationContext
         ensureSessionObjects(context.applicationContext)
+        // CarLife 自动接入：注册 Activity 生命周期（用户从 CarLife+ 切回本应用时立刻探测 7240，
+        // 端口就绪即自动启动会话；无需用户再点「启动连接」）。
+        CarLifeAutoAttach.install(context.applicationContext)
         // 横屏兼容写入失败的原因（user build 限制 / 无 shell 通道）只有这里能落盘：
         // 车机侧设置面板的 toast 只给用户看，排查需要日志。
         AppOrientationCompat.diagSink = ::appendLog
@@ -514,11 +518,79 @@ object SessionController {
             bluetoothServer?.isRunning == true ||
             bluetoothClient?.isRunning == true
 
+    /**
+     * 立即打断 CarLife 内容源的等待并重建连接（设置页/首页「刷新/重连」入口调用）。
+     *
+     * 只在当前内容源是 [CarLifeScreenSource] 时生效；会话未建立/已结束时只写日志并返回 false，
+     * 不会偷偷重启整个车机会话（需要重连车机仍走 [disconnect] + [startConnection]）。
+     */
+    fun retryCarLifeSource(): Boolean {
+        val source = currentScreenSource as? CarLifeScreenSource
+        if (source == null) {
+            appendLog(
+                "CARLIFE: 手动重试未执行——当前没有 CarLife 内容源" +
+                    "（会话运行=${isSessionRunning()}，内容源未挂载或已结束）",
+            )
+            return false
+        }
+        appendLog(
+            "CARLIFE: 手动重试——重建本机 CarLife 连接（等待引擎=${source.isWaitingEngine}，" +
+                "已重试=${source.retryCount} 次，握手超时=${source.handshakeTimeoutCount} 次）",
+        )
+        return source.retryNow()
+    }
+
+    /** 是否正在建立连接（自动接入/UI 判断用）。 */
+    fun isSessionStarting(): Boolean = sessionStarting.get()
+
+    /**
+     * 首页/CarLife 页的 CarLife 等待状态（只读、主线程可调：只读 volatile 字段，不做 IO）。
+     *
+     * 三态：
+     * - 未连接/无内容源：`("未连接", "先在手机 CarLife+ 点「无线连接」，再回本应用（会自动接入）或点「启动连接」")`
+     * - 会话已运行、等待引擎/握手：`("等待 CarLife+ 无线连接（第 N 次重试）", "保持 CarLife+「无线连接」；切回本应用会自动接入，或点「重试」")`
+     * - 已连接：`("CarLife+ 已连接", "画面/声音来自手机 CarLife+")`
+     *
+     * @return 第一项 = 状态文本；第二项 = 给用户的建议。
+     */
+    fun carLifeWaitStatus(): Pair<String, String> {
+        val source = currentScreenSource as? CarLifeScreenSource
+        return when {
+            source == null && !isSessionRunning() ->
+                "未连接" to "先在手机 CarLife+ 点「无线连接」，再回本应用（会自动接入）或点「启动连接」"
+
+            source == null ->
+                "会话运行中，等待 CarLife 内容源" to "车机视频建立后会自动接入 CarLife；也可点「重试」或手动重连"
+
+            source.isWaitingEngine || !source.isEngineConnected ->
+                "等待 CarLife+ 无线连接（第 ${source.retryCount} 次重试）" to
+                    "保持 CarLife+「无线连接」；切回本应用会自动接入，或点「重试」立即重建"
+
+            else -> "CarLife+ 已连接" to "画面/声音来自手机 CarLife+"
+        }
+    }
+
+    /** 手动触发一次自动接入检测（开关关闭/已连接/刚手动断开时返回 false，原因见日志）。 */
+    fun tryAutoAttachNow(context: Context): Boolean = CarLifeAutoAttach.tryAutoAttachNow(context)
+
+    /** Activity 回到前台时的可选入口（正常已由 CarLifeAutoAttach 的生命周期回调自动触发）。 */
+    fun autoAttachOnResume(context: Context) {
+        CarLifeAutoAttach.onAppForeground(context.applicationContext, returningFromBackground = true)
+    }
+
+    /** Activity 退到后台时的可选入口，提前暂停自动接入轮询。 */
+    fun autoAttachOnPause() {
+        CarLifeAutoAttach.onAppBackground()
+    }
+
     /** 启动前重查环境，再开启保活、广播和蓝牙；已有会话时不重复启动 */
     @Synchronized
     fun startConnection(context: Context) {
         if (SessionCommands.stopping) return
         if (isSessionRunning() || sessionStarting.get()) return
+        // 手动启动入口：清除「手动断开后不自动接入」抑制并停止自动轮询；
+        // 自动接入发起的 startConnection 不清除（CarLifeAutoAttach 内部已处理）。
+        if (!CarLifeAutoAttach.isAutoStarting()) CarLifeAutoAttach.onManualStart()
         // 最终入口再次核对，避免权限回调、设置页返回或后续新入口绕过准备检查
         val preparation = ConnectionPreflight.inspect(context, audioEnabledForSession)
         if (!preparation.ready) {
@@ -559,6 +631,8 @@ object SessionController {
     fun disconnect(context: Context) {
         connectCancelled = true
         sessionStarting.cancel()
+        // 用户手动断开：抑制自动接入，避免 CarLife 端口还开着时断开后立刻又被自动连上。
+        CarLifeAutoAttach.suppress()
         val hadProjection = CarPlayService.mediaProjection != null
         pendingEndpointUpdate = null
         retireSession(reason = "用户断开或取消")
@@ -628,8 +702,8 @@ object SessionController {
     @Volatile private var lastSessionEnd = "尚无结束记录"
 
     /**
-     * 内容源诊断摘要（会话日志/诊断导出共用）：CarLife 源带引擎连接、解码帧数、
-     * 码流真实尺寸与最近错误，便于现场判断黑屏卡在哪一层。
+     * 内容源诊断摘要（会话日志/诊断导出共用）：CarLife 源带引擎连接、等待/重试/握手超时计数、
+     * 解码帧数、码流真实尺寸与最近错误，便于现场判断黑屏卡在哪一层。
      */
     private fun sourceDiagnostics(): String {
         val source = currentScreenSource ?: return "无"
@@ -638,9 +712,18 @@ object SessionController {
                 append(source.name)
                 append("(引擎=")
                 append(if (source.isEngineConnected) "已连接" else "未连接")
+                append(" 等待=").append(if (source.isWaitingEngine) "是" else "否")
+                append(" 重试=").append(source.retryCount)
+                if (source.handshakeTimeoutCount > 0) append(" 握手超时=").append(source.handshakeTimeoutCount)
                 append(" 解码帧=").append(source.deliveredFrames)
                 append(" 码流=")
-                append(if (source.streamWidth > 0 && source.streamHeight > 0) "${source.streamWidth}x${source.streamHeight}" else "未知")
+                append(
+                    if (source.streamWidth > 0 && source.streamHeight > 0) {
+                        "${source.streamWidth}x${source.streamHeight}"
+                    } else {
+                        "未知"
+                    },
+                )
                 source.lastErrorText.takeIf { it.isNotEmpty() }?.let { append(" 错误=").append(it) }
                 append(")")
             }

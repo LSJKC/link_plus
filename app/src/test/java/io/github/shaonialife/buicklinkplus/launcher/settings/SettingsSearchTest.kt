@@ -1,6 +1,7 @@
 package io.github.shaonialife.buicklinkplus.launcher.settings
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -36,6 +37,6 @@ class SettingsSearchTest {
         assertEquals(SettingsMenus.PERMISSIONS, SettingsMenus.itemOf(SettingsMenus.PERMISSIONS).id)
         SettingsMenus.SEARCH.forEach { assertEquals(it.target, SettingsMenus.itemOf(it.target).id) }
         assertEquals(SettingsMenus.DISPLAY, SettingsMenus.directPhonePanel(SettingsMenus.LAYOUT))
-        assertEquals(SettingsMenus.DEFAULT_MAP, SettingsMenus.directPhonePanel(SettingsMenus.MAP))
+        assertNull(SettingsMenus.directPhonePanel(SettingsMenus.MAP))
     }
 }

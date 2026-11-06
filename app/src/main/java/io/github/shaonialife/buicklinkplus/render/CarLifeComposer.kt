@@ -12,6 +12,7 @@ import android.opengl.GLES20
 import android.opengl.GLUtils
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.SystemClock
 import android.util.Log
 import android.view.Surface
 import java.nio.ByteBuffer
@@ -21,6 +22,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.math.roundToInt
 
 /**
  * P1B CarLife 合成器：壁纸背景 + 安全区 contain + 圆角裁剪（对应历史参考实现 d9 的合成语义）。
@@ -48,8 +50,8 @@ import java.util.concurrent.atomic.AtomicReference
  * 在 `capture/CarLifeScreenSource.attach(...)` 内：
  * 1. 创建：`composer = CarLifeComposer(surface, log = { line -> log(line) })`；
  * 2. 先布局再启动：
- *    `composer.updateLayout(geometry, profile.width, profile.height)`（码流尺寸未知时先用 profile，
- *    收到 SPS 实测尺寸后再调一次）；
+ *    `composer.updateLayout(geometry, 0, 0)`（码流真实尺寸未知时先传 0；SPS/解码输出格式到达后再传真实宽高。
+ *    **不要传 98311 申请尺寸**，否则 pane 会按申请比例拉伸）；
  *    `composer.targetFps = profile.fps`；
  *    `if (!composer.start()) { 回退到 P1A 直出（decoder 直接输出到 attach 的 Surface） }`；
  * 3. 解码器输出改到合成器输入：`CarLifeVideoDecoder(w, h, fps, composer.inputSurface(), listener)`；
@@ -116,6 +118,13 @@ class CarLifeComposer(
     @Volatile
     private var startupError: String? = null
 
+    /** CARLIFE-FIT 诊断日志限流：内容变化立即打，同值最多每 [FIT_LOG_INTERVAL_MS] 一行。 */
+    @Volatile
+    private var lastFitLogAt = 0L
+
+    @Volatile
+    private var lastFitLogKey = ""
+
     // 此监视器需要 wait/notify，保留 Java Object 的显式接口
     @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN")
     private val renderWakeup = Object()
@@ -134,10 +143,13 @@ class CarLifeComposer(
     /**
      * 更新画布、安全区与码流尺寸（任意线程可调用，start 前必须先调一次）。
      *
+     * [sourceW]/[sourceH] 必须是**码流真实宽高**（SPS 解析值 / 解码输出格式），不能传 98311 申请尺寸，
+     * 否则 pane 比例与真实画面不一致会拉伸。未知时传 0（pane 暂铺满安全区，出画面后再按真实尺寸重算）。
+     *
      * @param geometry 会话显示几何：`canvasWidth/Height` 应等于编码器 profile 尺寸（即 [output]
      *   Surface 尺寸）；`content` 是车机安全区（画布坐标，左上原点）。
-     * @param sourceW 解码器输出宽度（SPS 实测值；未知传 0 表示先铺满安全区）
-     * @param sourceH 解码器输出高度
+     * @param sourceW 码流真实宽度（SPS/解码输出；未知传 0）
+     * @param sourceH 码流真实高度
      */
     fun updateLayout(
         geometry: DisplayGeometry,
@@ -147,7 +159,7 @@ class CarLifeComposer(
         val sourceWidth = sourceW.coerceAtLeast(0)
         val sourceHeight = sourceH.coerceAtLeast(0)
         val content = geometry.content
-        val pane = containPane(content, sourceWidth, sourceHeight)
+        val pane = DisplayGeometry.containPane(content, sourceWidth, sourceHeight)
         val snapshot = Layout(geometry.canvasWidth, geometry.canvasHeight, content, sourceWidth, sourceHeight, pane)
         val previous =
             synchronized(layoutLock) {
@@ -167,14 +179,37 @@ class CarLifeComposer(
                     "${snapshot.canvasWidth}x${snapshot.canvasHeight}（输出 Surface 尺寸固定，建议重建合成器）",
             )
         }
-        log(
-            "CARLIFE-COMPOSER: fit source=${sourceWidth}x$sourceHeight " +
-                "canvas=${snapshot.canvasWidth}x${snapshot.canvasHeight} " +
-                "content=${content.width}x${content.height}@${content.left},${content.top} " +
-                "pane=${pane.width}x${pane.height}@${pane.left},${pane.top} radius=$cornerRadiusPx",
-        )
+        logFit(sourceWidth, sourceHeight, content, pane, snapshot)
         sceneDirty.set(true)
         wakeRenderer()
+    }
+
+    /**
+     * 实车诊断：一眼看出码流/安全区/实际窗格的比例是否匹配（限流，避免 SPS 抖动刷屏）。
+     * 期望 `pane` 的宽高比 == `ratio`，≈ 表示按码流等比 contain；若 `size` 远小于安全区是码流比例与车机屏差异导致，
+     * 属正常 letterbox，不是程序拉伸。
+     */
+    private fun logFit(
+        sourceWidth: Int,
+        sourceHeight: Int,
+        content: PixelArea,
+        pane: PixelArea,
+        snapshot: Layout,
+    ) {
+        if (sourceWidth <= 0 || sourceHeight <= 0) return
+        val key = "${sourceWidth}x$sourceHeight:$content:$pane:${snapshot.canvasWidth}x${snapshot.canvasHeight}"
+        val now = SystemClock.uptimeMillis()
+        if (key == lastFitLogKey && now - lastFitLogAt < FIT_LOG_INTERVAL_MS) return
+        lastFitLogKey = key
+        lastFitLogAt = now
+        val ratio = sourceWidth.toDouble() / sourceHeight
+        val ratioText = (ratio * 10_000).roundToInt() / 10_000.0
+        log(
+            "CARLIFE-FIT: stream=${sourceWidth}x$sourceHeight " +
+                "content=${content.left},${content.top},${content.right},${content.bottom} " +
+                "pane=${pane.left},${pane.top},${pane.right},${pane.bottom} size=${pane.width}x${pane.height} " +
+                "ratio=$ratioText canvas=${snapshot.canvasWidth}x${snapshot.canvasHeight} radius=$cornerRadiusPx",
+        )
     }
 
     /** 当前 CarLife 视频窗格（画布坐标、左上原点）；未布局时为 null，供 P3 触摸映射/诊断。 */
@@ -272,29 +307,6 @@ class CarLifeComposer(
     fun inputSurface(): Surface = inputSurfaceRef.get() ?: throw IllegalStateException("CarLifeComposer 未启动或已停止，inputSurface 不可用")
 
     // ---- 布局/contain 计算 ----
-
-    /**
-     * contain 算法与历史参考实现 `CarLifeBridge.publishFit` 一致：安全区内按码流宽高比等比放入并居中，
-     * 剩余空间留给壁纸（不变形）。码流尺寸未知时铺满安全区。
-     */
-    private fun containPane(
-        content: PixelArea,
-        sourceWidth: Int,
-        sourceHeight: Int,
-    ): PixelArea {
-        if (sourceWidth <= 0 || sourceHeight <= 0 || content.width <= 0 || content.height <= 0) return content
-        val sourceAspect = sourceWidth.toDouble() / sourceHeight
-        val contentAspect = content.width.toDouble() / content.height
-        return if (contentAspect > sourceAspect) {
-            val paneWidth = (content.height * sourceAspect).toInt().coerceIn(1, content.width)
-            val left = content.left + (content.width - paneWidth) / 2
-            PixelArea(left, content.top, left + paneWidth, content.bottom)
-        } else {
-            val paneHeight = (content.width / sourceAspect).toInt().coerceIn(1, content.height)
-            val top = content.top + (content.height - paneHeight) / 2
-            PixelArea(content.left, top, content.right, top + paneHeight)
-        }
-    }
 
     private class Layout(
         val canvasWidth: Int,
@@ -792,6 +804,9 @@ class CarLifeComposer(
         private const val START_TIMEOUT_MS = 4_000L
         private const val STOP_JOIN_TIMEOUT_MS = 1_500L
         private const val STATS_INTERVAL_NANOS = 10_000_000_000L
+
+        /** CARLIFE-FIT 同值日志最小间隔。 */
+        private const val FIT_LOG_INTERVAL_MS = 2_000L
 
         /** EGL 配置：8/8/8/8 + ES2 + RECORDABLE（编码器输入 Surface 必需）。 */
         private const val EGL_RECORDABLE_ANDROID = 0x3142

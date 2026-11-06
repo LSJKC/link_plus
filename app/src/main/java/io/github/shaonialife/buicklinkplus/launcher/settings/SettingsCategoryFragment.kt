@@ -154,7 +154,6 @@ class SettingsCategoryFragment : Fragment() {
                 panel(SettingsMenus.ORIENTATION)
             }
             SettingsMenus.LAYOUT -> panel(SettingsMenus.DISPLAY)
-            SettingsMenus.MAP -> panel(SettingsMenus.DEFAULT_MAP)
             SettingsMenus.AUDIO -> {
                 strategyLabel =
                     TextView(context)

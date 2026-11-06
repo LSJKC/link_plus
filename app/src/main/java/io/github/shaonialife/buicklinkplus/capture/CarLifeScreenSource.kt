@@ -55,11 +55,14 @@ import java.util.concurrent.atomic.AtomicReference
  * 同一编码器输入 Surface 上**绝不并发两个解码器**：[CarLifeVideoDecoder.stopAndWait] 超时
  * （旧线程仍在渲染）时由 [RetiringDecoderGate] 挂门，线程真正退出前拒绝新建。
  *
- * 诊断：对外暴露 [isEngineConnected]/[deliveredFrames]/[streamWidth]/[streamHeight]/
- * [lastErrorText]，供会话日志采样；关键日志含 `carlife connected` / `decoder out` / `fit`。
- * 等待连接的重试日志限流（首次即时、之后最多每 10s 一行）；已握手但 ≥5s 无视频帧、或持续
- * 收帧但 ≥8s 无解码输出（CSD 缺失/解码器静默不出帧）时各输出诊断行，后者会重发 98311
- * 重建引擎编码器，尝试把永久黑屏救回来。
+ * 诊断：对外暴露 [isEngineConnected]/[isWaitingEngine]/[retryCount]/[handshakeTimeoutCount]/
+ * [deliveredFrames]/[streamWidth]/[streamHeight]/[lastErrorText]，供会话日志/首页/设置页采样；
+ * 关键日志含 `carlife connected` / `decoder out` / `fit`。等待连接的重试日志限流（首次即时、
+ * 之后最多每 10s 一行）。**握手看门狗**：`client.start()` 成功只保证 65538 版本协商，若 4s 内
+ * 没有 65570 特征配置确认、也没有 CSD/首帧进度，判定引擎端口开着但未进入无线连接，主动断开
+ * 重建（计入 [retryCount]/[handshakeTimeoutCount]）。已握手但 ≥5s 无视频帧、或持续收帧但
+ * ≥8s 无解码输出（CSD 缺失/解码器静默不出帧）时各输出诊断行，后者会重发 98311 重建引擎编码器，
+ * 尝试把永久黑屏救回来。[retryNow] 供「刷新/重连」入口立即打断等待重建一轮。
  */
 class CarLifeScreenSource(
     private val context: Context,
@@ -90,6 +93,21 @@ class CarLifeScreenSource(
     /** 诊断：最近一次错误文本（连接成功后清空）。 */
     @Volatile
     var lastErrorText: String = ""
+        private set
+
+    /** 诊断：本会话累计「等待 CarLife+ 无线连接/握手」的重试次数（成功握手后不再增长）。 */
+    @Volatile
+    var retryCount: Int = 0
+        private set
+
+    /** 诊断：会话已挂载但引擎未连通/未完成握手（首页/设置页展示「等待 CarLife+ 无线连接」用）。 */
+    @Volatile
+    var isWaitingEngine: Boolean = false
+        private set
+
+    /** 诊断：已连上端口但 4s 内未完成握手（65570/首帧未到）而被主动重建的次数。 */
+    @Volatile
+    var handshakeTimeoutCount: Int = 0
         private set
 
     /**
@@ -124,6 +142,27 @@ class CarLifeScreenSource(
     fun sendCarGps(fix: CarGpsFix): Boolean = session?.client?.sendCarGps(fix) ?: false
 
     /**
+     * 立即打断当前等待并重建一轮 CarLife 连接（设置页「刷新/重连」等入口调用）。
+     *
+     * 会唤醒管理线程的等待睡眠；若客户端正卡在 15s 版本协商里（[CarLifeHuClient.start] 阻塞），
+     * 同时 `stop()` 让它尽快返回，避免用户点刷新后还要干等十几秒。返回 false = 当前没有已挂载
+     * 的内容源会话（未连接/会话已结束，需要先点「启动连接」）。
+     */
+    fun retryNow(): Boolean {
+        val current =
+            synchronized(lock) { session } ?: run {
+                log("CARLIFE: 手动重试未执行——当前没有 CarLife 内容源会话（未连接或已结束）")
+                return false
+            }
+        current.retryRequested = true
+        synchronized(current.lock) { current.lock.notifyAll() }
+        // 若管理线程正卡在 client.start() 的 15s 版本协商里，停掉客户端让这一轮立即返回。
+        current.client?.stop()
+        log("CARLIFE: 手动重试——立即打断等待并重建连接（已重试 $retryCount 次）")
+        return true
+    }
+
+    /**
      * 可选导航出口（P4）：CarLife 0x10030 解析后的转向/距离快照。
      * 由 SessionController 接线到 [CarLifeNav.submitNextTurn]；null = 不处理导航。
      */
@@ -147,6 +186,9 @@ class CarLifeScreenSource(
         detach()
         lastErrorText = ""
         isEngineConnected = false
+        isWaitingEngine = true
+        retryCount = 0
+        handshakeTimeoutCount = 0
         deliveredFrames = 0L
         streamWidth = 0
         streamHeight = 0
@@ -169,7 +211,10 @@ class CarLifeScreenSource(
             CarLifeComposer(surface, log = { line -> log(line) }).apply {
                 this.targetFps = targetFps
                 this.cornerRadiusPx = newSession.cornerRadiusPx
-                updateLayout(geometry, width, height)
+                // 这里只有编码器 profile 尺寸（= 98311 申请尺寸），不是码流真实尺寸；
+                // 先传 0 让 pane 不成立（此时也还没有解码画面），等 SPS/解码输出格式回调再按真实宽高重算，
+                // 避免用申请尺寸算 pane 导致画面按错误比例拉伸。
+                updateLayout(geometry, 0, 0)
             }
         log(
             "CARLIFE-COMPOSER: 待启动（壁纸=" +
@@ -244,6 +289,7 @@ class CarLifeScreenSource(
         doomed.wallpaperSource = null
         // 诊断字段立即复位：旧会话回调都带 isCurrent(session) 闸门，不会再把它们改回去。
         isEngineConnected = false
+        isWaitingEngine = false
         streamWidth = 0
         streamHeight = 0
         // C0（审计修复）：release() 返回前**同步**等解码器停下（≤800ms），保证 SessionController
@@ -313,8 +359,11 @@ class CarLifeScreenSource(
         ensureComposer(session)
         // 连接失败重试的原样日志会被「7 端口 × 每 2s」刷屏，这里限流：首次立即一行，之后最多每 10s 一行。
         val waitLog = LogThrottle(RETRY_LOG_INTERVAL_MS)
-        var retryCount = 0L
         while (session.active && isCurrent(session)) {
+            if (session.retryRequested) {
+                session.retryRequested = false
+                logForSession(session, "CARLIFE: 手动重试——立即重建连接")
+            }
             val client =
                 CarLifeHuClient(
                     host = HOST,
@@ -382,22 +431,36 @@ class CarLifeScreenSource(
             if (!started) {
                 session.client = null
                 client.stop()
-                retryCount++
-                setLastError(session, "CarLife 引擎未就绪（127.0.0.1 控制端口未连通）")
+                bumpRetry(session)
+                setWaitingEngine(session, true)
+                setLastError(session, "CarLife 引擎未就绪（127.0.0.1 控制端口未连通或未完成 98305 版本协商）")
                 // 首次立即打一行，之后最多每 10s 一行：现场能看出「还在等」但不会被每 2s 的
                 // 7 端口失败日志刷屏（逐端口日志已由 quietPortFailures 关掉）。
                 if (waitLog.allow("wait")) {
                     logForSession(
                         session,
-                        "CARLIFE: 等待 CarLife+ 无线连接（127.0.0.1:${CarLifeProtocol.PORT_CMD}）" +
-                            "第 $retryCount 次重试（打开 CarLife+ 并点「无线连接」）",
+                        "CARLIFE: 等待 CarLife+ 无线连接（第 $retryCount 次重试，127.0.0.1:${CarLifeProtocol.PORT_CMD}；" +
+                            "打开 CarLife+ 并点「无线连接」）",
                     )
                 }
-                sleepWhileActive(session, RETRY_DELAY_MS)
+                if (session.retryRequested) {
+                    session.retryRequested = false
+                    logForSession(session, "CARLIFE: 手动重试——跳过 2s 退避，立即重建连接")
+                } else {
+                    sleepWhileActive(session, RETRY_DELAY_MS)
+                }
+                continue
+            }
+            if (session.retryRequested) {
+                session.retryRequested = false
+                client.stop()
+                session.client = null
+                logForSession(session, "CARLIFE: 手动重试——本轮握手让位，立即重建连接")
                 continue
             }
             setLastError(session, "")
             setEngineConnected(session, true)
+            setWaitingEngine(session, true)
             session.lastFrameAt = SystemClock.uptimeMillis()
             // P3：客户端已握手 → 触摸 sink 可下发 9340（未连接时保持解绑）。
             touchSink?.setSender(client)
@@ -405,17 +468,60 @@ class CarLifeScreenSource(
             // 解码进度看门狗基线：以本轮连接时的累计解码帧为起点，避免把上一轮进度算进来。
             val framesAtConnect = session.framesReceived
             session.noDecodeWatchdog.reset(deliveredFrames)
-            logForSession(session, "CARLIFE: carlife connected 127.0.0.1（握手成功，等待视频帧）")
+            logForSession(session, "CARLIFE: carlife connected 127.0.0.1（65538 版本协商完成，等待特征配置/视频帧）")
             // P2：引擎连接建立后启动音频水泵（无声时按节拍发静音包保活接收端音频管线）。
             audioSink?.start()
+            // 握手看门狗：start() 成功只保证 65538 版本协商；若 4s 内既没有 65570 特征配置确认，
+            // 也没有 CSD/首帧进度，说明 CarLife+ 端口开着但没真正进入无线连接等待态——继续等会
+            // 永远停在「已连接但没画面」，这里主动断开重建（计入 retryCount/handshakeTimeoutCount）。
+            val handshakeStartedAt = SystemClock.uptimeMillis()
+            var handshakeSettled = false
             var lastNoVideoWarnAt = 0L
             while (session.active && isCurrent(session) && client.isRunning) {
+                if (session.retryRequested) {
+                    session.retryRequested = false
+                    logForSession(session, "CARLIFE: 手动重试——结束本轮连接，立即重建")
+                    break
+                }
                 sleepWhileActive(session, STATUS_POLL_MS)
                 if (!session.active || !isCurrent(session) || !client.isRunning) break
+                if (session.retryRequested) {
+                    session.retryRequested = false
+                    logForSession(session, "CARLIFE: 手动重试——结束本轮连接，立即重建")
+                    break
+                }
                 val now = SystemClock.uptimeMillis()
+                if (!handshakeSettled) {
+                    val progressed =
+                        client.isFeatureConfigAcked ||
+                            session.pipeline?.hasCsd == true ||
+                            session.framesReceived > framesAtConnect
+                    if (progressed) {
+                        handshakeSettled = true
+                        setWaitingEngine(session, false)
+                        logForSession(
+                            session,
+                            "CARLIFE: 握手完成（65570=${client.isFeatureConfigAcked}，" +
+                                "CSD=${if (session.pipeline?.hasCsd == true) "已就绪" else "缺失"}，" +
+                                "已收帧=${session.framesReceived - framesAtConnect}）",
+                        )
+                    } else if (now - handshakeStartedAt >= HANDSHAKE_TIMEOUT_MS) {
+                        bumpRetry(session)
+                        bumpHandshakeTimeout(session)
+                        setLastError(session, "已连上 CarLife 端口但 ${HANDSHAKE_TIMEOUT_MS}ms 内未完成握手/无视频进度")
+                        logForSession(
+                            session,
+                            "CARLIFE: 已连上端口但 ${HANDSHAKE_TIMEOUT_MS}ms 内未完成握手" +
+                                "（65570 特征配置/首帧均未到）——判定 CarLife+ 未进入无线连接，" +
+                                "主动断开重建（第 $retryCount 次重试）",
+                        )
+                        break
+                    }
+                }
                 // 看门狗 1：已握手但长时间没有视频帧（诊断行带管线状态，区分没进无线连接 vs SPS 没解析到）。
                 val idle = now - session.lastFrameAt
-                if (idle >= NO_VIDEO_WARN_MS &&
+                if (handshakeSettled &&
+                    idle >= NO_VIDEO_WARN_MS &&
                     (lastNoVideoWarnAt == 0L || now - lastNoVideoWarnAt >= NO_VIDEO_WARN_INTERVAL_MS)
                 ) {
                     lastNoVideoWarnAt = now
@@ -446,6 +552,7 @@ class CarLifeScreenSource(
             }
             setEngineConnected(session, false)
             if (session.active && isCurrent(session)) {
+                setWaitingEngine(session, true)
                 logForSession(session, "CARLIFE: 连接已断开，收尾解码器/管线后 2s 重连")
             }
             client.stop()
@@ -462,6 +569,7 @@ class CarLifeScreenSource(
         }
         teardownDecoder(session)
         setEngineConnected(session, false)
+        setWaitingEngine(session, false)
         logForSession(session, "CARLIFE: 管理线程退出")
     }
 
@@ -548,6 +656,8 @@ class CarLifeScreenSource(
         logForSession(session, "CARLIFE-VIDEO: 码流真实尺寸 ${width}x$height（编码器 ${session.width}x${session.height}）")
         // 合成器布局先跟随 SPS 实测尺寸（SurfaceTexture 缓冲尺寸也在此同步），再决定是否重建解码器。
         session.composer?.updateLayout(session.geometry, width, height)
+        // 触摸映射与画面用同一个 pane：显式把 SPS 真实尺寸同步给触摸 sink，不依赖 client.videoSize 的时序。
+        touchSink?.updateSourceSize(width, height)
         val decoder = session.decoder.get() ?: return
         if (width != session.appliedWidth || height != session.appliedHeight) {
             logFit(session, width, height)
@@ -757,6 +867,24 @@ class CarLifeScreenSource(
         if (isCurrent(session)) lastErrorText = message
     }
 
+    /** 累计一次等待引擎/握手的重试（成功握手后不再清空，供现场看总次数）。 */
+    private fun bumpRetry(session: Session) {
+        if (isCurrent(session)) retryCount += 1
+    }
+
+    /** 更新「等待 CarLife+ 无线连接」展示状态（首页/设置页通过 SessionController 读取）。 */
+    private fun setWaitingEngine(
+        session: Session,
+        waiting: Boolean,
+    ) {
+        if (isCurrent(session)) isWaitingEngine = waiting
+    }
+
+    /** 累计一次「端口已连但握手超时」的重建。 */
+    private fun bumpHandshakeTimeout(session: Session) {
+        if (isCurrent(session)) handshakeTimeoutCount += 1
+    }
+
     private fun logForSession(
         session: Session,
         line: String,
@@ -803,7 +931,7 @@ class CarLifeScreenSource(
     ) {
         val deadline = SystemClock.uptimeMillis() + durationMs
         synchronized(session.lock) {
-            while (session.active) {
+            while (session.active && !session.retryRequested) {
                 val remaining = deadline - SystemClock.uptimeMillis()
                 if (remaining <= 0) return
                 try {
@@ -825,9 +953,19 @@ class CarLifeScreenSource(
             height: Int,
         ) {
             if (!isCurrent(session)) return
-            session.composer?.updateLayout(session.geometry, width, height)
-            logForSession(session, "CARLIFE-VIDEO: 解码输出格式 ${width}x$height（编码器 ${session.width}x${session.height}）")
-            logFit(session, width, height)
+            // pane 以 SPS 码流真实尺寸为准（与触摸映射同一基准）；解码输出格式只在 SPS 未知时兜底。
+            // 二者通常一致；若不一致（例如解码器输出对齐到宏块尺寸），优先信 SPS，避免把对齐尺寸当画面比例。
+            val stream = session.pipeline?.streamSize
+            val paneWidth = stream?.first?.takeIf { it > 0 } ?: width
+            val paneHeight = stream?.second?.takeIf { it > 0 } ?: height
+            session.composer?.updateLayout(session.geometry, paneWidth, paneHeight)
+            touchSink?.updateSourceSize(paneWidth, paneHeight)
+            logForSession(
+                session,
+                "CARLIFE-VIDEO: 解码输出格式 ${width}x$height" +
+                    "（pane 按 ${paneWidth}x$paneHeight，编码器 ${session.width}x${session.height}）",
+            )
+            logFit(session, paneWidth, paneHeight)
         }
 
         override fun onFrameRendered(ptsUs: Long) {
@@ -884,6 +1022,10 @@ class CarLifeScreenSource(
 
         @Volatile
         var active = true
+
+        /** 手动重试请求：[retryNow] 置位，管理线程看到后立即打断等待/握手并重建一轮。 */
+        @Volatile
+        var retryRequested = false
 
         /** P1B 合成器（壁纸+安全区 contain+圆角）；null 或启动失败时直出。 */
         @Volatile
@@ -949,6 +1091,13 @@ class CarLifeScreenSource(
         private const val HOST = "127.0.0.1"
         private const val MANAGER_THREAD_NAME = "carlife-source"
         private const val RETRY_DELAY_MS = 2_000L
+
+        /**
+         * 握手看门狗窗口（毫秒）：client.start() 成功（65538 版本协商完成）后，若这么久内
+         * 既没有 65570 特征配置确认、也没有 CSD/首帧进度，判定引擎端口开着但未进入无线连接，
+         * 主动断开重建（避免永远停在「已连接但没画面」）。
+         */
+        private const val HANDSHAKE_TIMEOUT_MS = 4_000L
 
         /** 连接失败重试日志限流窗口：首次立即打，之后最多每 10s 一行。 */
         private const val RETRY_LOG_INTERVAL_MS = 10_000L

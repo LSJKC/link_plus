@@ -101,7 +101,7 @@ class DashboardWidgetPanelFragment : SettingsPanelFragment() {
                         runCatching {
                             SettingsContentActivity.start(
                                 requireContext(),
-                                SettingsMenus.itemOf(SettingsMenus.DASHBOARD_WIDGET),
+                                SettingsMenus.Item(SettingsMenus.DISPLAY, "仪表盘音乐组件", "已从设置菜单移除", R.drawable.ic_music),
                                 onPhone = true,
                             )
                         }.onFailure { hostToast("请在手机设置中打开“仪表盘音乐组件”") }

@@ -13,7 +13,7 @@ import java.net.Socket
  *
  * 用途：让设置页/诊断页回答三个问题——
  * 1. 这台手机上装的是哪种 CarLife/车联（荣耀车联、官方 CarLife+、小米 CarWith、OPPO 车联、vivo 车机、三星 CarLink…）；
- * 2. 引擎现在有没有进入「无线连接」态（本机回环端口 7240/8240/… 是否监听）；
+ * 2. 引擎现在有没有进入「无线连接」态（本机回环 **7 个端口** 7240/8240/9240/9241/9242/9340/9440 是否监听）；
  * 3. 没连上时下一步该做什么。
  *
  * 连接原理（详见 `docs/carlife-mechanism.md`）：CarLife+ 在「无线连接」态是**本机 TCP 服务端**，
@@ -36,13 +36,14 @@ object CarLifeEngineDetector {
     /** 单个端口探测超时（毫秒）。 */
     const val PORT_PROBE_TIMEOUT_MS = 150
 
-    /** 本机 CarLife 引擎端口 → 用途（与 [CarLifeProtocol] 的 PORT_* 常量一致；9242 VR 不参与状态探测）。 */
+    /** 本机 CarLife 引擎端口 → 用途（与 [CarLifeProtocol] 的 7 个 PORT_* 常量一一对应）。 */
     private val PORTS: Map<Int, String> =
         linkedMapOf(
             7240 to "命令/握手",
             8240 to "H.264 视频",
             9240 to "媒体 PCM",
             9241 to "TTS PCM",
+            9242 to "VR/语音",
             9340 to "触摸回传",
             9440 to "数据通道",
         )
@@ -170,11 +171,11 @@ object CarLifeEngineDetector {
     /**
      * 探测本机回环端口监听状态（**阻塞**，约 `端口数 × PORT_PROBE_TIMEOUT_MS`，禁止主线程调用）。
      *
-     * 端口列表与顺序固定：7240/8240/9240/9241/9340/9440（对应 [CarLifeProtocol] 的 7 个端口中
-     * 除 9242 VR 之外的 6 个；VR 不参与连接状态判断）。
+     * 端口列表与顺序固定为 CarLife 引擎完整的 **7 个端口**：
+     * 7240/8240/9240/9241/9242/9340/9440（与 [CarLifeProtocol] 的 PORT_* 常量一一对应）。
      *
      * 注意：**TCP 能连上 ≠ 协议已应答**。荣耀车的 CarLife+ 在未进入「无线连接」等待态时，
-     * 端口也可能 accept 但 98305 版本协商不回（历史实测），最终以日志
+     * 端口也可能 accept 但 98305 版本协商不回（实车链路日志记录），最终以日志
      * `CARLIFE: carlife connected` 为准。
      */
     fun portsListening(): List<Pair<Int, Boolean>> = PORTS.keys.map { port -> port to isPortOpen(port) }

@@ -11,8 +11,8 @@ plugins {
  * 版本名跟随上游 link_plus：上游 0.0.9 → 本仓库 "0.0.9-carlife"；上游升级时同步前缀。
  * 同一上游版本内多次修复可加后缀 .2/.3；versionCode 每次出包 +1（Android 只认这个）。
  */
-val appVersionName = "0.0.9-carlife.3"
-val appVersionCode = 160
+val appVersionName = "0.0.9-carlife.4"
+val appVersionCode = 161
 
 /**
  * 从根目录的 keystore.properties 读取签名，缺少时使用 debug 签名

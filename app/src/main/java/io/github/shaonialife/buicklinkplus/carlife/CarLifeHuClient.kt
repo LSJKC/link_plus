@@ -425,6 +425,15 @@ class CarLifeHuClient(
 
     val isRunning: Boolean get() = running.get()
 
+    /** 诊断：是否已收到 65538 版本匹配（引擎已接受 98305 协议 3.0，进入可握手状态）。 */
+    val isProtocolMatched: Boolean get() = versionMatched
+
+    /** 诊断：是否已收到 65570 特征配置确认（有序初始化里 98386 的回执）。 */
+    val isFeatureConfigAcked: Boolean get() = featureConfigAcked
+
+    /** 诊断：握手是否已有实质进展（65538 或 65570 任一到达）。 */
+    val isHandshakeReady: Boolean get() = versionMatched || featureConfigAcked
+
     /**
      * 引擎 **65544 回显的确认编码档位**。
      *

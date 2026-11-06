@@ -17,7 +17,8 @@
   不需要。全部是普通 App 权限 + 本机回环 socket（见 [无 ADB 模型与权限](no-adb-model.md)）。
 - **需要手机先做什么？**
   需要你**手动打开手机上的 CarLife+（荣耀手机是「荣耀车联」里的 CarLife）并进入「无线连接」**，
-  让引擎进入等待连接的无线态；本应用会每 2 秒自动重试，成功后车机出现 CarLife 画面。
+  让引擎进入等待连接的无线态；**然后切回本应用即可自动接入**（默认开启自动接入），应用也会每
+  1.5 秒检测一次端口，成功后车机出现 CarLife 画面。
 - **这套接法安全吗？会不会破坏 CarLife+？**
   本应用不改动、不替换手机上的 CarLife+ 应用，也不读取它的私有数据，只在它自己监听的本地端口上
   按公开协议收发数据；最坏情况只是"CarLife 画面出不来"，不会修改 CarLife+ 的配置或数据。
@@ -62,7 +63,7 @@ CarLife+ 无线连接的原始设计是：**手机 CarLife+ 起 TCP 服务端，
 | 8240 | H.264 视频 | 手机 → 车机的视频裸流（12B 包头 + 帧数据） |
 | 9240 | 媒体音频 | 裸 PCM 字节流（12B 包头 + PCM） |
 | 9241 | TTS/导航播报 | 独立 PCM 流（导航播报、提示音） |
-| 9242 | VR/语音 | 语音识别相关（本应用预留，不参与连接状态判断） |
+| 9242 | VR/语音 | 语音识别相关（本应用暂未使用该通道，检测/端口表会一并探测） |
 | 9340 | 触摸回传 | 车机 → 手机：点击/滑动/双指动作 |
 | 9440 | 数据通道 | 辅助数据 |
 
@@ -114,7 +115,8 @@ CarLife+ 无线连接的原始设计是：**手机 CarLife+ 起 TCP 服务端，
 2. **先让手机和别克车机保持蓝牙连接**（本应用连接车机本身就需要蓝牙，荣耀车联的"下一步"有时也要求
    有车机蓝牙连接才解锁；这一步和 CarPlay 连接共用蓝牙）；
 3. 打开「荣耀车联」→ 进入 CarLife → 点「无线连接」，停在「正在连接」界面；
-4. 回到本应用，点「启动连接」（或保持已启动状态）——应用会自动连本机 7240 等端口；
+4. **切回本应用即可**：应用检测到本机 7240 已监听会自动启动连接（默认开启，无需再点「启动连接」）；
+   若关闭了自动接入，则回到本应用后手动点「启动连接」；
 5. 车机出现 CarLife 画面后，操作全部在车机上（画面/音乐/导航/触摸都来自手机 CarLife+）。
 
 > 本应用在等引擎期间每 2 秒重试；**部分系统的后台冻结会暂停重试**，所以请尽量保持 CarPlay 会话在
@@ -188,7 +190,7 @@ Android 11+ 默认只能看到"自己 + 匹配 `<queries>` 的包"。本仓库 m
 | API | 说明 |
 |---|---|
 | `detect(context): List<EngineInfo>` | 已装 CarLife/车联（displayName / packageName / versionName / versionCode / kind），荣耀优先去重排序 |
-| `portsListening(): List<Pair<Int, Boolean>>` | 本机 7240/8240/9240/9241/9340/9440 是否监听（阻塞，约 ≤900ms，**勿在主线程**） |
+| `portsListening(): List<Pair<Int, Boolean>>` | 本机 7 个端口 7240/8240/9240/9241/9242/9340/9440 是否监听（阻塞，约 ≤1.05s，**勿在主线程**） |
 | `isAnyPortListening(): Boolean` | 是否有任一端口监听（快捷判断） |
 | `isPortOpen(port, timeoutMs)` | 单端口探测（默认 150ms 超时） |
 | `statusText(context): String` | 多行摘要：已装引擎 + 版本 + 端口表 + 结论 + 下一步提示（阻塞，**勿在主线程**） |
@@ -197,7 +199,23 @@ Android 11+ 默认只能看到"自己 + 匹配 `<queries>` 的包"。本仓库 m
 
 - `CARLIFE: carlife connected` —— 已连上引擎并握手成功；
 - 只有端口监听没有该行 —— 大概率 CarLife+ 还没进入「无线连接」等待态，或引擎被系统冻结/杀死；
+- `CARLIFE: 已连上端口但 Ns 内未完成握手` —— 端口通了但引擎没真正进入无线连接：应用会自动断开重建；
 - 有 `carlife connected` 但长时间无画面 —— 看 `CARLIFE: 已握手但 Ns 无视频帧`、`协商编码参数`、`客户端 SPS 实测`。
+
+会话侧还有这些诊断/控制入口（设置页「刷新/重连」、首页状态用）：
+
+| API | 说明 |
+|---|---|
+| `SessionController.retryCarLifeSource(): Boolean` | 立即打断当前等待并重建一轮 CarLife 连接（没有内容源时只写日志，可退化为手动重连） |
+| `SessionController.carLifeWaitStatus(): Pair<String, String>` | 首页/CarLife 页三态展示：`("等待 CarLife+ 无线连接（第 N 次重试）", 建议)` / `("CarLife+ 已连接", 建议)` / `("未连接", 建议)`；主线程可调 |
+| `SessionController.tryAutoAttachNow(context): Boolean` | 手动触发一次自动接入检测（开关关闭/已连接/刚手动断开时返回 false，原因见日志） |
+| `SessionController.autoAttachOnResume(context)` / `autoAttachOnPause()` | 可选的手动生命周期入口；正常已由 `CarLifeAutoAttach` 内部注册的 Activity 生命周期自动触发，**无需改 MainActivity** |
+| `CarLifePrefs.autoAttachEnabled(context)` / `setAutoAttachEnabled(context, enabled)` | 自动接入开关（prefs key `carlife_auto_attach`，默认开） |
+| `CarLifeAutoAttach.start/stop/isEnabled/isPolling` | 自动接入控制/查询（一般不需要直接调用） |
+
+自动接入的行为：应用回到前台时立刻探测 `127.0.0.1:7240`，之后前台每 1.5s 轮询；端口就绪且连接
+准备（权限/车机设置）齐全时自动启动会话，日志关键字 `CARLIFE: 检测到 CarLife+ 无线连接，自动接入车机`。
+用户手动断开后不会立刻重连（抑制标记），直到再点「启动连接」或应用真正退到后台再回前台。
 
 ---
 

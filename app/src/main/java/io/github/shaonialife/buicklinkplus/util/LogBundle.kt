@@ -25,7 +25,7 @@
  * paths = `@xml/file_paths`，`res/xml/file_paths.xml` 已提供 cache-path）。
  * 未声明 provider 时分享返回 false（不再用 Downloads 兜底，避免用户没点保存却落盘）。
  *
- * 注意：端口探测最多约 6×250ms，建议在后台线程调用（UI 入口由 activation-ui 负责）。
+ * 注意：端口探测最多约 7×250ms，建议在后台线程调用（UI 入口由 activation-ui 负责）。
  * 日志/设置内容全部经过 [LogRedactor] 脱敏；设置里的敏感键值额外隐藏。
  */
 package io.github.shaonialife.buicklinkplus.util
@@ -88,8 +88,8 @@ object LogBundle {
     @Volatile
     private var lastDownloadsDisplayPath: String? = null
 
-    /** CarLife 引擎本机端口（7240 控制 / 8240 视频 / 9240 媒体 / 9241 TTS / 9340 触摸 / 9440 数据）。 */
-    private val ENGINE_PORTS = intArrayOf(7240, 8240, 9240, 9241, 9340, 9440)
+    /** CarLife 引擎本机 7 个端口（7240 控制 / 8240 视频 / 9240 媒体 / 9241 TTS / 9242 VR / 9340 触摸 / 9440 数据）。 */
+    private val ENGINE_PORTS = intArrayOf(7240, 8240, 9240, 9241, 9242, 9340, 9440)
 
     /** 端口 connect 超时：现场没开 CarLife 时也要快速出包。 */
     private const val PORT_PROBE_TIMEOUT_MS = 250
@@ -610,6 +610,7 @@ object LogBundle {
             8240 -> "视频"
             9240 -> "媒体"
             9241 -> "TTS"
+            9242 -> "VR"
             9340 -> "触摸"
             9440 -> "数据"
             else -> "未知"

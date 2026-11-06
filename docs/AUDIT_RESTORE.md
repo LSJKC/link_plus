@@ -1,78 +1,92 @@
-# 原版 link_plus 功能审计与恢复清单
+# 原版 link_plus 功能审计与恢复清单（别克车机 + CarLife 内容源环境）
 
-> 审计对象：基线 `51fb394`（上游 link_plus 原版）→ 当前 `80030ca` + 工作区改动。
-> 审计时间：2026-11-07 00:00（Asia/Shanghai）。工作区正被 activation-ui 等并行任务改动，**本文只是该时刻快照**。
-> 本审计只读，未改动任何生产代码；结论用于下一步恢复决策。
+> 基线 `51fb394`（上游 link_plus）→ 当前 HEAD `906002b`；审计时间 2026-11-07 00:45。
+> 使用环境：别克 E2LB 车机（1972×520，safeArea 1408×476@278,44）、CarLife+ 为唯一内容源、
+> 无 root/ADB/Shizuku、不需要 link_plus 虚拟桌面/车机桌面/地图分屏。
+> 本审计只读，未改生产代码。工作区仍有并行改动（UI/画面/会话），以下按 HEAD 结论、必要时注明工作区状态。
 
-## 0. 分类口径
+## 0. 判定口径
 
-- **A 恢复**：原版 link_plus 已有、后来被 CarLife 实现顶替或被删除的通用功能 → 以原版实现为主恢复，CarLife 只做扩展点。
-- **B 保留**：原版没有、CarLife 独有或作为增量接入的功能 → 保留。
-- **C 不恢复**：依赖已移除的内置无线 ADB/shell 服务，或用户此前明确要求删除的 CarLife 重复功能 → 保留删除，不重建。
+- **有用**：手机端通用功能（连接/显示/音频/壁纸/权限/日志/MAC/画面边距/常用入口/手机信号/手机天气）＋ CarLife 画面/音频/TTS/触摸/导航/HUD/GPS/语音键 ＋ CarPlay 发送链路。
+- **无用（不恢复）**：依赖 link_plus 虚拟桌面、ADB/shell、车机桌面渲染的功能（桌面应用管理/Dock/超采样/横屏/官方车载应用/仪表盘组件/音乐岛/左列只读小组件/车机外观视觉项）。
+- **删除（用户已确认）**：地图与交接（CarLife 自带导航）；仪表盘音乐组件（CarLife 模式无虚拟桌面音乐卡）。
 
-## 1. 已恢复（工作区快照中已回到原版形态，来源为并行恢复改动）
+## 1. 按环境重分类（原版被删/被隐藏功能）
 
-| 原版英文/代码名 | 中文原版名 | 影响文件 | 状态/证据 |
+| 原版英文/代码名 | 中文原版名 | 原版作用 | 本环境有用？ | 结论/现状 |
+|---|---|---|---|---|
+| Desktop app management (`DESKTOP`) | 管理桌面应用 | link_plus 桌面应用勾选 | 否（无桌面） | 已隐藏/不恢复；代码与面板残留 |
+| Official car apps (`OFFICIAL_CAR_APPS`) | 车载应用与手机版 | 车机原生应用/RemoteViews 入口 | 否（无桌面） | 已隐藏/不恢复 |
+| Dashboard widget (`DASHBOARD_WIDGET`) | 仪表盘音乐组件 | 车机右侧虚拟屏音乐卡 | 否（无桌面，用户确认） | **删除**；入口已移除，`DashboardWidget*` 类残留 |
+| Supersample (`SUPERSAMPLE`) | 应用超采样 | 虚拟屏渲染清晰度 | 否（无虚拟屏） | 已隐藏/不恢复 |
+| App orientation (`ORIENTATION`) | 应用横屏 | `am compat` 系统属性覆盖 | 否（无 ADB/无虚拟屏） | 已隐藏/不恢复 |
+| Dock size (`DOCK`) | 侧栏大小 | link_plus Dock 缩放 | 否（无 Dock） | 已隐藏/不恢复 |
+| Map & handoff (`DEFAULT_MAP`) | 地图与交接 | 地图分屏/手机交接 | 否（CarLife 自带导航，用户确认） | **删除**；入口已移除，`DefaultMapPanelFragment` 类残留 |
+| Car appearance visuals (`CAR_APPEARANCE`) | 车机外观：透明磨砂/背景模糊/面板轮廓/音乐岛 | link_plus 桌面视觉 | 否（无桌面面板） | 视觉项已移除；页面仅剩“左列小组件+天气城市”（见 §3） |
+| Left read-only widgets (`LeftWidgetColumn`) | 左侧只读小组件（时钟/日历/停车计时/快捷应用/天气） | link_plus 桌面左列 | 否（CarLife 全屏无左列渲染） | 不必恢复；配置入口应移除 |
+| Weather (car left column) | 车机左列天气 | 桌面左列天气组件 | 否（无渲染路径） | 不必恢复；手机天气另议 |
+| Phone signal/network (`view_phone_cellular`) | 手机信号/网络/移动数据 | 手机首页连接卡状态 | **是** | 已恢复（网络/移动数据状态 + “优先使用手机流量”开关） |
+| Weather (phone home) | 手机首页天气 | 手机首页出行概览 | **是** | 显示已恢复，**刷新需适配**（§3） |
+| Wallpaper (`WallpaperActivity`/`WallpaperStore`) | 壁纸：自选/内置/校准 | 手机端壁纸，CarLife 合成器背景 | **是** | 已恢复（10 张内置 + 自选/校准）；内置图来源需合规确认（§3） |
+| Permissions & background (`PERMISSIONS`) | 权限与后台 | 蓝牙/通知/定位/省电/常亮 | **是** | 已恢复 |
+| Audio strategy (`AudioPreference`) | 音乐与声音：自动/音质/兼容 | CarPlay 音频通道 | **是** | 已恢复（CarLife 外部 PCM 默认；兼容档走原版采集） |
+| Display (`DISPLAY`) | 显示与画面：缩放/帧率/码率/画面边距 | 编码 profile 与安全区留边 | **是** | 已恢复 |
+| Log export (`LogExporter`/`LogBundle`) | 日志导出/复制/清空 | 诊断 | **是** | 已恢复 + ZIP 分享 |
+| Bluetooth MAC (`DeviceIdentity` + 手填) | 本机蓝牙地址 | 连接身份 | **是** | 已恢复（自动+手填入口） |
+| Home quick entries (`home_shortcuts`) | 首页常用入口 | 手机首页快捷 | **是** | 已恢复（适配：APPS/MAP 换成 CarLife/连接/显示/关于） |
+| Notification access (`NotificationAccess`) | 通知使用权 | 媒体会话枚举 | **是** | 已恢复（仅手动授权；silent grant 属 ADB 类不回） |
+| Sleep policy / compat dim (`ScreenDimmer`) | 息屏与后台：常亮/兼容暗屏/立即暗屏 | 手机屏幕策略 | **是** | 已恢复 |
+| Media mute/volume (`MediaMuteController`) | 媒体静音/音量恢复 | 车机媒体键 | **是** | 已恢复 |
+| Target car/Wi-Fi auto join | 目标车机与网络 | 连接 | **是** | 原版逻辑保留（仅日志措辞变化） |
+| Disclaimer/version/licenses | 免责/版本/许可 | — | **是** | 已恢复 |
+
+## 2. 原版有价值但“漏恢复/需适配”逐项审计
+
+| 项 | 结论 | 依据 | 建议 |
 |---|---|---|---|
-| `DisplayPrefs.safeMargins` + 4×SeekBar (`ui_margin_side`/`ui_margin_value`) | 画面边距：左/上/右/下四滑块（0–120px，下次连接生效） | `launcher/settings/DisplayPrefs.kt`、`SettingsFragments.kt`、`res/values/interface_strings.xml` | 已恢复；`DisplayGeometry.create(...margins)` 消费；activation-ui 完成 |
-| home sections (`home_prepare`/`home_session`/`home_shortcuts`/`home_travel`) | 首页：连接准备 / 本次连接 / 常用入口 / 出行概览 | `MainActivity.kt`、`res/layout/activity_main.xml`、`res/values/strings.xml` | 已恢复（原版布局，仅去掉内置服务卡） |
-| audio status card (`audioTag`/`audioDesc`/`btnAudio`, `phone_home_audio_*`) | 首页声音状态卡（关闭/等待/发送中） | `MainActivity.kt`、`res/layout/activity_main.xml`、`res/values/phone_audio_strings.xml` | 已恢复 |
-| `SettingsMenus.PERMISSIONS` + `openPermissionSettings`/`requestQuickPermissions`/`handlePermissionShortcut`/`promptOverlayPermission`/`refreshSleepPolicy`/`showBackgroundPermissionGuide` | 权限与后台：首次授权、通知/蓝牙/定位、省电与常亮指引 | `MainActivity.kt`、`ui/PhonePermissionsView.kt`、`res/values/phone_permissions_strings.xml` | 已恢复；内置服务项不再阻塞连接（`ConnectionPreflight`） |
-| `AudioPreference` AUTO/QUALITY/COMPATIBILITY + `AudioSender` 原版采集/发送路径 + `AudioCaptureSupport` | 音乐与声音：自动 / 音质优先 / 兼容；兼容走原版 MediaProjection 播放采集 | `audio/AudioPreference.kt`、`audio/AudioSender.kt`、`audio/AudioCaptureSource.kt`、`audio/AudioCaptureSupport.kt`、`session/ConnectionPreflight.kt` | 已恢复；CarLife 外部 PCM 作为默认路径叠加，兼容模式才要求录音+投屏授权 |
-| `WallpaperActivity`/`WallpaperStore`（与基线逐字节一致）+ `CarLifeWallpaperSource` 读取原版壁纸 | 壁纸：自选图片、校准、切片 | `ui/WallpaperActivity.kt`、`ui/WallpaperStore.kt`、`render/CarLifeWallpaperSource.kt` | 已恢复；生成壁纸已下线，CarLife 合成器复用原版壁纸 |
-| `SettingsMenus` 原版六分类 + 设置搜索（`settings_search_hint`） | 设置：连接与设备 / 画面与外观 / 音乐与声音 / 帮助与诊断 + 搜索 | `launcher/settings/SettingsMenus.kt`、`SettingsCategoryFragment.kt`、`view_phone_settings.xml` | 已恢复；当前 `VISIBLE` 为 CarLife/连接/显示/音频/外观/关于 |
-| `CarAppearancePanelFragment` + `CarAppearancePrefs` | 车机外观：背景透明度、模糊、面板轮廓 | `launcher/settings/CarAppearancePanelFragment.kt`、`ui/CarAppearancePrefs.kt` | 已恢复 UI；CarLife 内容源下仅部分生效（见 §5） |
-| `LogExporter` 原版导出/复制/清空（`Scope`、`Result`、MediaStore 下载） + `LogBundle` | 帮助与诊断：导出日志、复制、清空 | `util/LogExporter.kt`、`util/LogBundle.kt`、`MainActivity.kt` | 原版入口与 API 保留；ZIP 整包为新增能力 |
-| `DeviceIdentity` 自动读取 + `bt_mac_override` 手填入口 | 本机蓝牙地址（连接身份）：自动解析 + 手动覆盖 | `util/DeviceIdentity.kt`、`MainActivity.kt`、`SettingsCategoryFragment.kt` | 自动解析为原版；手填入口为新增恢复通道，首页未解析时软提示 |
-| `MainActivity` 原版功能入口（`openSettings`/`requestAudioProjection`/`showSleepGuidance` 等） | 首页/设置的连接、声音、常亮、日志入口 | `MainActivity.kt` | 已恢复（除下方 C 类内置服务相关） |
+| 显示（分辨率/帧率/码率/画面边距） | **已恢复** | `DisplayPanelFragment`、`DisplayPrefs.safeMargins`；`SessionController` 用 `DisplayGeometry.create(..., margins)`，`CarLifeComposer` 按 content 窗格渲染 | 保持；CarLife 编码尺寸仍由车机 SETUP/引擎决定，缩放/帧率/码率作用于 CarPlay 编码 |
+| 音频（策略/兼容采集/权限） | **已恢复** | `AudioPreference`、`AudioSender` 原版采集路径、`AudioCaptureSupport`、`ConnectionPreflight` 仅 COMPATIBILITY 要求录音+投屏 | 实车验证兼容档；默认 CarLife 外部 PCM 无需授权 |
+| 壁纸（含内置） | **已恢复（有合规疑点）** | `WallpaperActivity/Store` 恢复；`MainActivity` 内置壁纸网格；`CarLifeWallpaperSource` 读原版壁纸 | 内置 10 张资产非基线资产，`BuiltinWallpapers` KDoc 称“link_plus 原版自带”不准确；与“不提供旧闭源资源”硬约束可能冲突，需确认来源/版权，必要时改代码生成或只留用户自选 |
+| 权限与后台 | **已恢复** | `SettingsMenus.PERMISSIONS` + `PhonePermissionsView`（蓝牙/定位/通知/悬浮窗/省电/厂商后台） | 保持；内置服务项永不检查（`ConnectionPreflight` 注释） |
+| 日志导出 | **已恢复** | `LogExporter` 原 API/入口 + `LogBundle` ZIP（保存/分享） | 保持 |
+| MAC | **已恢复** | `DeviceIdentity` 自动 + `bt_mac_override` 手填（首页/设置→连接与设备入口） | 保持；首页未解析软提示 |
+| 画面边距 | **已恢复** | 4×SeekBar 左/上/右/下（0–120px，下次连接），CarLife 合成器消费 | 保持；实车校准 |
+| 常用入口 | **已恢复（适配后）** | 首页 6 快捷（连接/显示/音频/CarLife/外观/关于）+ 常用行（CarLife/MAC/目标/基础环境） | 保持 |
+| 手机信号/网络/移动数据 | **已恢复** | `view_phone_cellular`、`phoneNetworkValue`/`phoneCellularValue`、`switchCellular` | 保持 |
+| 天气（手机首页） | **应恢复（适配）** | 显示已恢复，但 `WeatherState.ensureFresh` 只在 `LeftWidgetColumn`（车机左列渲染）调用；CarLife 模式无左列渲染 → 天气不再自动刷新，长期“暂无数据/30 分钟刷新失效” | 在手机首页初始化/前台定时调用 `WeatherState.ensureFresh(context, CarAppearancePrefs.weatherCity(context), elapsed)`；涉及 `phone/PhoneHomeDashboard.kt`、`media/WeatherState.kt`；入口：首页“天气”行 |
+| 左侧只读小组件 | **不必恢复** | 仅 `DualDisplayComposer` 渲染；CarLife 用 `CarLifeComposer` 不渲染左列；`CarAppearancePanelFragment` 的开关无效果 | 移除该页 widgetSwitches（保留“天气位置”供手机天气兜底）；`launcher/settings/CarAppearancePanelFragment.kt`、`SettingsMenus.CAR_APPEARANCE` |
+| 车机天气/车机外观视觉项 | **不必恢复** | 同上，无渲染路径 | 不恢复 |
+| 地图与交接、仪表盘组件 | **删除（已确认）** | CarLife 自带导航/无桌面音乐卡 | 保持删除；清理 `SettingsMenus` 死引用 |
+| 设置死面板 | **需清理** | `SettingsMenus.createFragment/itemOf/directPhonePanel` 仍引用 `DASHBOARD_WIDGET`/`DEFAULT_MAP` 等；`PANELS` 已不含其中部分 → `itemOf()` 可能抛异常 | 删除常量/工厂分支或统一返回隐藏页：`launcher/settings/SettingsMenus.kt` |
+| 自动接管/重试 | **未改坏**（详见 §3） | 会话层函数集合无删除；CarLife 接管为源层重试 | 保持；按 §3 建议验证 |
 
-## 2. 仍待恢复 / 需补齐
+## 3. 自动接管/重试审计结论
 
-| 项 | 现状 | 建议 |
-|---|---|---|
-| CarLife 增量设置入口（TTS / 导航 / GPS / 壁纸开关 / 圆角半径） | `CarLifePrefs.setTtsEnabled/setNavEnabled/setWallpaperEnabled/setCornerRadius` 无任何 UI 调用点；`buildCarLifePage` 只有引擎状态/重连/诊断 | 在现有 **CarLife 页**追加设置区（additive，不占用原版分类），复用 `CarLifePrefs` 键 |
-| 兼容模式授权提示 | `AudioPreference.COMPATIBILITY` 才要求 RECORD_AUDIO + 投屏，但首页/连接卡文案仍按“声音授权”笼统描述 | 连接 sheet 按策略分支显示；CarLife 默认路径不提示授权 |
-| CarLife 引擎/端口状态在首页可见性 | 引擎检测在 CarLife 页（`buildCarLifePage`），首页只有通用状态 | 首页“连接准备”可选加一行引擎提示（低优先，避免堆 UI） |
-| 设置搜索关键词覆盖 | `SettingsMenus.SEARCH` 仍引用 PANELS（含已下线面板）与 CarLife 页 | 清理已下线面板的搜索项；补 CarLife/TTS/导航/GPS/画面边距关键词 |
+- **原版会话/网络重试未被改坏**：`SessionController` 相对基线函数 54→55，唯一新增 `sourceDiagnostics`；Wi-Fi 自动加入/重试/取消分支代码保持一致，仅日志措辞随“无内置服务”调整；`ConnectionPreflight` 保留，仅内置服务项永不检查、音频权限仅 COMPATIBILITY 档检查（不阻塞默认路径）。
+- **CarLife 接管是新增源层重试**（`capture/CarLifeScreenSource.kt`）：`manage()` 每 `RETRY_DELAY_MS=2000` 创建客户端；失败限流日志（10s 一次）；握手成功后 `STATUS_POLL_MS=500` 轮询；5s 无帧提示；持续收帧但无解码输出时重发 98311+重建解码器；断开后 `client.stop()`→触摸/语音解绑→`CarLifeNowPlaying.onCarLifeDisconnected`→解码器/管线清理→音频 reset→2s 重连；**不触发** `SessionController.retireSession`。
+- **与参考实现语义等价**（只读历史实现 worker：约 1.5s 轮询 7240 → 握手 → 断开重试），未发现“改坏”。
+- 残余风险/建议（carlife-core 正在修，供参考）：
+  1. 半开端口：7240 可 accept 但不应答时 `client.start()` 最坏等 15s，接管延迟可达约 17s；建议首轮握手快速失败（3–5s）。
+  2. 等待期车机只有壁纸/保活画面；建议首页状态行明确“等待 CarLife+ 无线连接”（CarLife 页已有）。
+  3. 无限重试为设计（用户可随时开 CarLife+）；`detach`/会话结束能停（active/isCurrent 检查 + daemon 清理），无需改。
+  4. 重连后状态重绑已覆盖（touch/voice sender 重绑、NowPlaying 断开、解码器/管线重置）；建议补“引擎晚于会话出现”“引擎重启”两条时序测试。
+  5. 源层重试不触发 AirPlay 重连是期望行为（自动接管），不要改成 retireSession。
 
-## 3. 不恢复（保留删除）
+## 4. 需要补的恢复项（文件/入口级）
 
-| 原版英文/代码名 | 中文原版名 | 影响文件 | 不恢复理由 |
-|---|---|---|---|
-| `EmbeddedAdb`/`ServiceActivationActivity`/`activity_service_activation.xml`/`activation_*` | 内置无线 ADB 激活与内置服务状态页 | `shizuku/*`（已删）、res 字符串/布局 | 用户明确要求移除内置 ADB/激活 |
-| `SHELL_SERVICE`/`INPUT_SERVICE` 检查项与 `rowShizuku`/`shizukuChip`/`advCard` UI | 内置权限服务 / 触控输入服务 | `ConnectionPreflight`（枚举保留但永不检查）、`activity_main.xml`、`shizuku/*` | 依赖内置 shell，无 ADB 不可用 |
-| `HiddenDisplaySource` 与虚拟屏 shell 准备（`parseCarPlayDisplays`/`prepareConnectionDisplays`/`releaseDisplays`） | 虚拟屏内容源/显示准备 | `capture/HiddenDisplaySource.kt`（已删）、`MainActivity` 相关函数 | CarLife 已取代内容源；且依赖 shell |
-| `VirtualLauncher.startInputHealer`、`DeviceIdentity.resolveViaShell`、`LogExporter.collectInputDiagnostics` | 输入服务自愈 / shell 读身份 / 输入服务诊断 | 同名文件 | 依赖内置 shell；身份改手填覆盖，触摸改 CarLife 通道 |
-| `NotificationAccess` 静默授权与 `rebindIfNotConnected`（`cmd notification allow_listener`/`dumpsys`） | 通知使用权静默授权/重绑 | `media/NotificationAccess.kt` | 依赖 shell；保留系统设置手动授权与监听器回调状态 |
-| `AppOrientationCompat` 的 `am compat` 覆盖执行路径 | 应用横屏（系统属性覆盖） | `launcher/settings/AppOrientationCompat.kt`、`OrientationPanelFragment` | 恢复的 UI 仍依赖 shell；无 ADB 下只能查询/保存意愿，**建议隐藏入口或标注不可用** |
-| PANELS：`DESKTOP`/`DOCK`/`SUPERSAMPLE`/`OFFICIAL_CAR_APPS`/`DASHBOARD_WIDGET`/`DEFAULT_MAP` | 桌面应用管理 / 侧栏大小 / 超采样 / 官方车载应用 / 仪表盘音乐组件 / 地图与交接 | `launcher/settings/SettingsMenus.kt`、`SettingsFragments.kt`、各 Panel 文件 | 用户此前明确要求去掉 CarLife 重复功能；且依赖虚拟屏/shell，无 ADB 下不生效 |
+1. **手机天气自动刷新**（唯一确定的漏恢复）：`phone/PhoneHomeDashboard.kt` 在 init/前台定时调用 `WeatherState.ensureFresh(context, CarAppearancePrefs.weatherCity(context), SystemClock.elapsedRealtime())`；`media/WeatherState.kt` 无需改；入口：首页“天气”行。
+2. **车机外观页精简**：`launcher/settings/CarAppearancePanelFragment.kt` 删除 `widgetSwitches`/左列小组件开关，仅保留“天气位置”；同步 `SettingsMenus.CAR_APPEARANCE` 文案（“天气位置”）。
+3. **设置死面板清理**：`launcher/settings/SettingsMenus.kt` 删除未使用常量/工厂分支（DESKTOP/OFFICIAL_CAR_APPS/DASHBOARD_WIDGET/SUPERSAMPLE/ORIENTATION/DOCK/DEFAULT_MAP）或改为隐藏页，避免 `itemOf()` 抛异常。
+4. （可选）首页等待 CarLife 状态提示：`phone/PhoneHomeDashboard.kt` 在未连引擎时显示“请打开 CarLife+ 无线连接”，避免用户误判黑屏。
+5. **合规确认**：内置壁纸 10 张资产来源/版权与 `BuiltinWallpapers` KDoc 描述核对（非基线资产，可能违反“不提供旧闭源资源”约束）；如需恢复“原版观感”，优先代码生成或纯色/用户自选。
 
-## 4. 非 UI 代码审计：原版是否被 CarLife 实现顶替
+## 5. 明确不恢复清单
 
-| 文件 | 差异结论 | 建议 |
-|---|---|---|
-| `input/TouchRouter.kt` | 原版 `route()`/手势/注入路径保留；CarLife `carLifeSink` 在入口前置、未接入时走原路径 | 无需恢复；现有“原版为主 + CarLife 扩展点”模式正确 |
-| `session/SessionController.kt` | 基线函数集合全部保留，仅新增 `sourceDiagnostics`；原音频/视频/采集链路保留，CarLife 作为可选 ScreenSource | 无需恢复 |
-| `audio/AudioSender.kt` + `AudioCaptureSource/AudioCaptureSupport` | 原版采集/发送/编码路径恢复；外部 PCM 为新增入口，兼容模式仍走原版 MediaProjection | 保持；实车验证兼容档 |
-| `iap2/Iap2SenderSession.kt`、`airplay/VirtualIap2Link.kt` | 基线函数无删除，仅新增导航 0x5200–0x5203、CarLife NowPlaying 接口 | 保持（增量） |
-| `capture/ScreenSource.kt` + `capture/CarLifeScreenSource.kt` | 原版接口未改，CarLife 是新增实现；原内容源被删除属 C 类 | 保持 |
-| `media/NotificationAccess.kt` | shell 静默授权/重绑移除，保留手动授权与状态查询 | 不恢复 shell 部分 |
-| `util/DeviceIdentity.kt` | 原自动解析保留，新增手填覆盖；`resolveViaShell` 移除 | 保持 |
-| `util/LogExporter.kt` | 原 API/UI 保留，新增 ZIP 整包；`collectInputDiagnostics` 移除 | 保持 |
-| `launcher/settings/AppOrientationCompat.kt` | 原实现保留，仅无 ADB 时降级 | UI 入口需处理（见 §3） |
+- 桌面应用管理、官方车载应用、仪表盘音乐组件、应用超采样、应用横屏、侧栏大小、地图与交接、车机外观视觉项（透明磨砂/背景模糊/面板轮廓/音乐岛）、左侧只读小组件、车机左列天气。
+- 内置无线 ADB/内置服务/触控输入服务相关（激活页、shizuku 类、SERVICE 检查、隐藏虚拟屏、shell 输入自愈、shell 读身份、shell 通知静默授权/重绑、shell 输入诊断）。
+- 理由：无 root/ADB/Shizuku；无 link_plus 虚拟桌面/车机桌面；地图与交接、仪表盘组件用户已确认删除。
 
-**结论**：未发现“非 UI 原版功能被 CarLife 算法/类整体顶替且必须回滚”的代码块；真正丢失项都是 ADB/shell 依赖（C 类）或用户要求删除的重复页面。当前主要风险是 UI 入口与 CarLife 增量缺位。
-
-## 5. 与用户要求/现状的冲突点（需裁决）
-
-1. 用户要求“以 link_plus 原版为主 + CarLife 只补原版没有的”，但 `SettingsMenus` 仍保留 9 个原版 PANELS 并参与搜索（桌面/Dock/超采样/横屏/地图/官方车载/仪表盘等）——指导航已隐藏，搜索/深层入口仍需下线或标注。
-2. “桌面/Dock/Grid/Map 不恢复”与工作区已恢复的面板代码并存：建议**保留代码、隐藏所有入口**，不要删除代码（避免与并行任务冲突）。
-3. 应用横屏/超采样/桌面/地图/仪表盘依赖原虚拟屏与 shell；恢复 UI 但无 ADB 不可用，不能计入“已恢复可用功能”。
-4. CarLife 增量开关（TTS/导航/GPS/壁纸/圆角）仍无 UI，需在 CarLife 页补，且不得占用原版分类。
-5. 首页声音卡沿用原版“声音授权”文案；CarLife 默认外部 PCM 无需授权（仅兼容档需要），需按 `AudioPreference` 分支调整文案。
-6. 部分恢复项来自 activation-ui 等并行任务（MainActivity/Settings/PhoneHomeDashboard/res），后续以他们的最终版本为准，避免重复/冲突修改。
-
-## 6. 建议验证
+## 6. 验证
 
 ```powershell
 cd F:\carplay\_newproj\linkplus_carlife
@@ -81,15 +95,15 @@ $env:JAVA_HOME='F:\carplay\tools\jdk17\jdk-17.0.20.1'
 .\gradlew.bat :app:testBuickUnitTest --console=plain
 ```
 
-实车清单：①连接/断开；②四边距滑块生效；③声音三策略（自动/音质/兼容）与授权提示；④壁纸选择/校准；⑤日志导出与分享；⑥权限与后台指引；⑦确认桌面/Dock/地图/超采样入口不可见。
+实车清单：连接/断开与“引擎后开”自动接管；画面边距；声音三策略；壁纸（内置/自选/校准）；权限与后台；日志 ZIP；MAC；首页各卡（含天气刷新）；确认桌面/Dock/地图/超采样/仪表盘入口不可见。
 
-## 7. 审计命令与证据
+## 7. 证据
 
 ```text
 git diff --stat 51fb394..HEAD
 git diff --name-status -M 51fb394..HEAD -- app/src
-git ls-tree -r --name-only 51fb394 -- app/src/main/java   # 基线类清单
-git diff 51fb394 -- <path>                                 # 单文件对照
+git ls-tree -r --name-only 51fb394 -- app/src/main/java
+git diff 51fb394 -- <path>
 ```
 
-关键基线文件：`MainActivity.kt`(3037 行)、`launcher/settings/SettingsMenus.kt`、`audio/AudioPreference.kt`、`ui/WallpaperStore.kt`、`util/LogExporter.kt`、`input/TouchRouter.kt`、`session/SessionController.kt`。
+关键文件：`MainActivity.kt`、`phone/PhoneHomeDashboard.kt`、`launcher/settings/SettingsMenus.kt`、`launcher/settings/SettingsFragments.kt`、`launcher/settings/CarAppearancePanelFragment.kt`、`audio/AudioPreference.kt`、`ui/WallpaperStore.kt`、`util/LogExporter.kt`、`input/TouchRouter.kt`、`session/SessionController.kt`、`capture/CarLifeScreenSource.kt`。

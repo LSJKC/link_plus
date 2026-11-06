@@ -9,11 +9,9 @@ object SettingsMenus {
     const val SUPERSAMPLE = 1
     const val ORIENTATION = 2
     const val DOCK = 3
-    const val DEFAULT_MAP = 4
     const val DISPLAY = 5
     const val CAR_APPEARANCE = 6
     const val OFFICIAL_CAR_APPS = 7
-    const val DASHBOARD_WIDGET = 8
 
     data class Item(
         val id: Int,
@@ -26,12 +24,10 @@ object SettingsMenus {
         listOf(
             Item(DESKTOP, "管理桌面应用", "勾选的应用显示在车机桌面", R.drawable.ic_menu_grid),
             Item(OFFICIAL_CAR_APPS, "车载应用与手机版", "查看真实车载入口并管理桌面应用", R.drawable.ic_menu_grid),
-            Item(DASHBOARD_WIDGET, "仪表盘音乐组件", "在右侧显示官方音乐桌面小组件", R.drawable.ic_music),
             Item(SUPERSAMPLE, "应用超采样", "竖屏应用渲染更精细，可三态调节", R.drawable.ic_menu_zoom),
             Item(ORIENTATION, "应用横屏", "竖屏应用在车机横屏全屏显示", R.drawable.ic_screen_rotation),
-            Item(CAR_APPEARANCE, "车机外观", "背景透明度、模糊与面板轮廓", R.drawable.ic_wallpaper),
+            Item(CAR_APPEARANCE, "车机外观", "左侧只读小组件与天气位置", R.drawable.ic_wallpaper),
             Item(DOCK, "侧栏大小", "调整图标、时钟与文字的整体比例", R.drawable.ic_menu_dock),
-            Item(DEFAULT_MAP, "地图与交接", "地图选择、显示模式、比例与手机交接", R.drawable.ic_menu_map),
             Item(DISPLAY, "显示与画面质量", "分辨率、视频码率与目标帧率", R.drawable.ic_menu_display),
         )
 
@@ -52,7 +48,6 @@ object SettingsMenus {
             Item(APPEARANCE, "画面与外观", "画质、安全区、壁纸、侧栏与浮层", R.drawable.ic_wallpaper),
             Item(APPS, "桌面与应用", "桌面选择、超采样与横屏", R.drawable.ic_menu_grid),
             Item(LAYOUT, "显示与布局", "分辨率、码率与帧率", R.drawable.ic_menu_display),
-            Item(MAP, "地图与导航", "默认地图与高德车载页面", R.drawable.ic_menu_map),
             Item(AUDIO, "音乐与声音", "音频策略与当前通路", R.drawable.ic_speaker),
             Item(CONNECTION, "连接与设备", "目标车辆、网络与权限", R.drawable.ic_wifi),
             Item(PERMISSIONS, "权限与后台", "首次授权与省电指引", R.drawable.ic_brightness),
@@ -118,7 +113,7 @@ object SettingsMenus {
     /**
      * 查找分组或二级面板，不依赖列表下标
      */
-    fun itemOf(id: Int): Item = (ALL + PANELS).first { it.id == id }
+    fun itemOf(id: Int): Item = (ALL + PANELS).firstOrNull { it.id == id } ?: Item(id, "设置", "", R.drawable.ic_app_settings)
 
     fun titleOf(id: Int): String = itemOf(id).title
 
@@ -128,7 +123,6 @@ object SettingsMenus {
     fun directPhonePanel(id: Int): Int? =
         when (id) {
             LAYOUT -> DISPLAY
-            MAP -> DEFAULT_MAP
             else -> null
         }
 
@@ -136,13 +130,11 @@ object SettingsMenus {
         when (id) {
             DESKTOP -> DesktopPanelFragment()
             OFFICIAL_CAR_APPS -> OfficialCarAppsPanelFragment()
-            DASHBOARD_WIDGET -> DashboardWidgetPanelFragment()
             SUPERSAMPLE -> SupersamplePanelFragment()
             ORIENTATION -> OrientationPanelFragment()
             DOCK -> DockPanelFragment()
             CAR_APPEARANCE -> CarAppearancePanelFragment()
             DISPLAY -> DisplayPanelFragment()
-            DEFAULT_MAP -> DefaultMapPanelFragment()
             else -> SettingsCategoryFragment().apply { arguments = android.os.Bundle().apply { putInt("category", id) } }
         }
 }

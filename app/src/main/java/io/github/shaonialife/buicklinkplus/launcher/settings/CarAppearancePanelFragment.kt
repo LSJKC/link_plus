@@ -55,7 +55,9 @@ class CarAppearancePanelFragment : SettingsPanelFragment() {
             }
         body.addView(
             TextView(context).apply {
-                text = "调整车机安全区左侧的只读小组件，以及天气组件使用的城市位置。"
+                text =
+                    "调整车机安全区左侧的只读小组件，以及天气组件使用的城市位置。" +
+                    "\n\nCarLife 模式暂不渲染左侧小组件，这些设置在 link_plus 桌面模式（投屏桌面）下生效。"
                 textSize = 14f
                 setAppearanceTextColor(R.color.m3_on_var)
                 setPadding(0, 0, 0, (16 * density).toInt())
@@ -92,7 +94,7 @@ class CarAppearancePanelFragment : SettingsPanelFragment() {
         }
         widgets.addView(
             TextView(context).apply {
-                text = "组件显示在车机安全区左侧，按上方顺序排列。建议选择不超过 5 个，保留清楚的阅读空间"
+                text = "组件显示在车机安全区左侧，按上方顺序排列。建议选择不超过 5 个，保留清楚的阅读空间（CarLife 模式暂不渲染左侧小组件）"
                 textSize = 14f
                 setAppearanceTextColor(R.color.m3_on_var)
                 setPadding(0, (8 * density).toInt(), 0, (8 * density).toInt())

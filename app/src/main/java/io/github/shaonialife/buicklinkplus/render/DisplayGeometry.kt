@@ -2,6 +2,7 @@ package io.github.shaonialife.buicklinkplus.render
 
 import kotlin.math.ceil
 import kotlin.math.floor
+import kotlin.math.roundToInt
 
 /** 顶部原点、右下开区间的有效像素矩形 */
 data class PixelArea(
@@ -70,6 +71,39 @@ data class DisplayGeometry(
                 )
             require(content.width > 0 && content.height > 0) { "当前安全区在缩放后没有有效像素，请提高分辨率" }
             return DisplayGeometry(viewWidth, viewHeight, width, height, content, view, outsideUiAllowed)
+        }
+
+        /**
+         * 把 `sourceWidth×sourceHeight` 的码流严格等比 contain 到 [content] 矩形内并居中，
+         * 返回实际视频窗格（与 [content] 同坐标系，左上原点）。
+         *
+         * 行为：
+         * - 内容区比码流更宽 → 以高为准，左右留边（letterbox 两侧留给壁纸）；
+         * - 内容区比码流更高 → 以宽为准，上下留边；
+         * - 码流尺寸未知（<=0）→ 返回 [content] 本身（解码器尚未出画面时的占位）。
+         *
+         * 纯函数、无 Android 依赖：CarLife 合成器（画面 contain）、触摸映射（同一窗格）与 JVM 单测共用，
+         * 保证"看到的画面"和"点到的坐标"永远基于同一个 pane。
+         */
+        fun containPane(
+            content: PixelArea,
+            sourceWidth: Int,
+            sourceHeight: Int,
+        ): PixelArea {
+            if (sourceWidth <= 0 || sourceHeight <= 0 || content.width <= 0 || content.height <= 0) return content
+            val sourceAspect = sourceWidth.toDouble() / sourceHeight
+            val contentAspect = content.width.toDouble() / content.height
+            return if (contentAspect > sourceAspect) {
+                // 内容区更宽：以高为准，左右各留一条边
+                val paneWidth = (content.height * sourceAspect).roundToInt().coerceIn(1, content.width)
+                val left = content.left + (content.width - paneWidth) / 2
+                PixelArea(left, content.top, left + paneWidth, content.bottom)
+            } else {
+                // 内容区更高（或等宽高比）：以宽为准，上下各留一条边
+                val paneHeight = (content.width / sourceAspect).roundToInt().coerceIn(1, content.height)
+                val top = content.top + (content.height - paneHeight) / 2
+                PixelArea(content.left, top, content.right, top + paneHeight)
+            }
         }
     }
 }

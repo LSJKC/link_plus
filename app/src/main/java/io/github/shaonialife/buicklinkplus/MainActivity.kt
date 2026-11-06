@@ -43,12 +43,14 @@ import io.github.shaonialife.buicklinkplus.legal.DisclaimerDialog
 import io.github.shaonialife.buicklinkplus.legal.DisclaimerPrefs
 import io.github.shaonialife.buicklinkplus.legal.needsDisclaimerAtLaunch
 import io.github.shaonialife.buicklinkplus.media.NotificationAccess
+import io.github.shaonialife.buicklinkplus.media.WeatherState
 import io.github.shaonialife.buicklinkplus.phone.PhoneHomeDashboard
 import io.github.shaonialife.buicklinkplus.service.CarPlayService
 import io.github.shaonialife.buicklinkplus.session.ConnectionPreflight
 import io.github.shaonialife.buicklinkplus.session.SessionCommands
 import io.github.shaonialife.buicklinkplus.session.SessionController
 import io.github.shaonialife.buicklinkplus.ui.BuiltinWallpapers
+import io.github.shaonialife.buicklinkplus.ui.CarAppearancePrefs
 import io.github.shaonialife.buicklinkplus.ui.DarkMessageDialog
 import io.github.shaonialife.buicklinkplus.ui.GlassActivity
 import io.github.shaonialife.buicklinkplus.ui.PanelWindow
@@ -115,6 +117,9 @@ class MainActivity : GlassActivity() {
 
     // 英雄卡实时帧率：1s 轮询对 VideoSender 已发帧计数取差值
     private var lastSentFrames = 0L
+
+    /** 首页天气前台自动刷新节流（30 分钟；onResume 也会触发一次，由 WeatherState 内部合并） */
+    private var lastHomeWeatherFreshAt = 0L
 
     /** 免责声明倒计时截止时刻（elapsedRealtime；旋转重建后透传，不重新计时）。 */
     private var disclaimerDeadlineAt = 0L
@@ -906,6 +911,23 @@ class MainActivity : GlassActivity() {
         log("测试台：两台手机蓝牙配对 -> 备用机跑 xcertplay 无线模式 -> 点「启动连接」等待回连")
     }
 
+    /** 首页 CarLife 行点击：会话已运行→刷新内容源；未运行→尝试自动接入。 */
+    private fun handleHomeCarLifeAction() {
+        if (SessionController.isSessionRunning()) {
+            val retried = SessionController.retryCarLifeSource()
+            snack(
+                if (retried) "已请求刷新 CarLife 连接，等待自动接入…" else "等待车机视频建立后重试",
+                4_000L,
+            )
+            return
+        }
+        val queued = SessionController.tryAutoAttachNow(this)
+        snack(
+            if (queued) "正在自动检测 CarLife+ 连接…" else "未检测到自动接入条件；请先在 CarLife+ 点「无线连接」",
+            4_000L,
+        )
+    }
+
     /** 「外观与壁纸」页的 10 张内置壁纸网格：点选即应用，当前项用 ✓ 标识。 */
     private fun buildBuiltinWallpaperGrid(parent: LinearLayout) {
         val density = resources.displayMetrics.density
@@ -1017,7 +1039,7 @@ class MainActivity : GlassActivity() {
             TextView(this).apply {
                 textSize = 12f
                 setAppearanceTextColor(R.color.m3_on_var)
-                text = "先在手机打开 CarLife+ → 无线连接，再回本应用点「启动连接」。"
+                text = "在 CarLife+ 点「开始连接/无线连接」后切回本应用会自动接入，无需再点「启动连接」。"
                 setPadding(0, (8 * density).toInt(), 0, (10 * density).toInt())
             },
         )
@@ -1038,7 +1060,7 @@ class MainActivity : GlassActivity() {
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     status.text = "CarLife：" + detected.first
                     portLine.text =
-                        "端口自检：" + detected.second + " 监听中（7240 命令 / 8240 视频 / 9240 媒体 / 9241 TTS / 9340 触摸）"
+                        "端口自检：" + detected.second + " 监听中（7240 命令 / 8240 视频 / 9240 媒体 / 9241 TTS / 9242 VR语音 / 9340 触摸 / 9440 数据）"
                 }
             }
         }
@@ -1065,7 +1087,18 @@ class MainActivity : GlassActivity() {
                 LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = (8 * density).toInt() },
             )
         }
-        actionButton("刷新自检") { refreshStatus() }
+        actionButton("刷新自检") {
+            val retried = SessionController.retryCarLifeSource()
+            snack(
+                when {
+                    retried -> "已请求刷新 CarLife 连接，等待自动接入…"
+                    SessionController.isSessionRunning() -> "等待车机视频建立后重试"
+                    else -> "会话未运行，请先在首页点「启动连接」"
+                },
+                4_000L,
+            )
+            refreshStatus()
+        }
         actionButton("重连") { reconnectCarLifeSession() }
         body.addView(actions)
         body.addView(
@@ -1125,6 +1158,15 @@ class MainActivity : GlassActivity() {
             body.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = (6 * density).toInt() })
         }
         val appContext = applicationContext
+        switchRow("自动接入 CarLife", "从 CarLife+ 切回本应用自动检测并接入", CarLifePrefs.autoAttachEnabled(this)) { enabled ->
+            CarLifePrefs.setAutoAttachEnabled(appContext, enabled)
+            if (enabled) {
+                val queued = SessionController.tryAutoAttachNow(appContext)
+                snack(if (queued) "自动接入已开启，正在检测 CarLife+ 连接…" else "自动接入已开启")
+            } else {
+                snack("自动接入已关闭，可在首页点「启动连接」手动连接")
+            }
+        }
         switchRow("TTS 导航播报", "语音播报混入车机音频", CarLifePrefs.ttsEnabled(this)) { enabled ->
             CarLifePrefs.setTtsEnabled(appContext, enabled)
             snack(if (enabled) "TTS 播报已开启" else "TTS 播报已关闭")
@@ -1452,9 +1494,7 @@ class MainActivity : GlassActivity() {
                     selectPhoneTab(true)
                     settings.showSection(id)
                 }
-            }, onTarget = ::showTargetPicker, onMac = ::showBluetoothMacDialog, onWallpaper = {
-                startActivity(Intent(this@MainActivity, WallpaperActivity::class.java))
-            })
+            }, onTarget = ::showTargetPicker, onMac = ::showBluetoothMacDialog, onCarLifeAction = ::handleHomeCarLifeAction)
         val cellular = layoutInflater.inflate(R.layout.view_phone_cellular, detail, false)
         // 新卡片在旧控件初始化之后创建，开关必须在布局加载后读取和绑定
         val switchCellular = cellular.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switchCellular)
@@ -1690,7 +1730,17 @@ class MainActivity : GlassActivity() {
 
     // ==================== 英雄卡状态机 ====================
 
+    /** 前台补拉首页天气（CarLife 模式左列不渲染，首页天气行需要自己触发刷新）。 */
+    private fun ensureHomeWeatherFresh() {
+        WeatherState.ensureFresh(this, CarAppearancePrefs.weatherCity(this), SystemClock.elapsedRealtime())
+    }
+
     private fun tickHero() {
+        val weatherNow = SystemClock.elapsedRealtime()
+        if (weatherNow - lastHomeWeatherFreshAt >= 30 * 60_000L) {
+            lastHomeWeatherFreshAt = weatherNow
+            ensureHomeWeatherFresh()
+        }
         homeDashboard?.refresh()
         refreshConnectionSection()
         phonePermissions?.refresh()
@@ -2795,6 +2845,7 @@ class MainActivity : GlassActivity() {
 
     override fun onResume() {
         super.onResume()
+        ensureHomeWeatherFresh()
         mainHandler.post(heroTick)
         // 旋转/重建后尚未接受：用原截止时刻续弹（不重新等 10 秒）
         if (needsDisclaimerAtLaunch(

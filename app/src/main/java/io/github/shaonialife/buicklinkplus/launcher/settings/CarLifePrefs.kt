@@ -21,6 +21,13 @@ object CarLifePrefs {
     /** 车机导航指引上行 0x5201/0x5202（默认开）。 */
     const val KEY_NAV_ENABLED = "carlife_nav_enabled"
 
+    /**
+     * CarLife+ 进入「无线连接」后自动接入车机（默认开）。
+     *
+     * 打开时：检测到本机 7240 监听 → 切回本应用后自动启动连接；关闭后只能手动点「启动连接」。
+     */
+    const val KEY_AUTO_ATTACH = "carlife_auto_attach"
+
     /** 画面合成使用壁纸背景（默认开；关闭时纯色底）。 */
     const val KEY_WALLPAPER_ENABLED = "carlife_wallpaper_enabled"
 
@@ -61,6 +68,16 @@ object CarLifePrefs {
         enabled: Boolean,
     ) {
         prefs(context).edit { putBoolean(KEY_NAV_ENABLED, enabled) }
+    }
+
+    /** CarLife+ 进入「无线连接」后自动接入车机（默认开）。 */
+    fun autoAttachEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_AUTO_ATTACH, true)
+
+    fun setAutoAttachEnabled(
+        context: Context,
+        enabled: Boolean,
+    ) {
+        prefs(context).edit { putBoolean(KEY_AUTO_ATTACH, enabled) }
     }
 
     fun wallpaperEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_WALLPAPER_ENABLED, true)
