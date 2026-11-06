@@ -1,8 +1,11 @@
-# GitHub 下游同步流程（草案）
+# GitHub 下游同步流程
 
-> 状态：草案。fork URL、remote 名称、是否启用 branch protection/CI 由 Lead 补充确认。  
+> 状态：**已配置**（fork = `LSJKC/link_plus`，upstream = `schemawisp/link_plus`，CI 已启用）。  
 > 适用仓库：`F:\carplay\_newproj\linkplus_carlife`（从 `schemawisp/link_plus` fork 的 CarLife 适配分支）。  
 > 相关文档：[CARLIFE_PORT_PLAN.md](CARLIFE_PORT_PLAN.md)、[PORT_MATRIX.md](PORT_MATRIX.md)、[no-adb-model.md](no-adb-model.md)。
+>
+> 实车测试包 v0.2.1：<https://github.com/LSJKC/link_plus/releases/tag/v0.2.1>  
+> CI 构建产物：GitHub Actions workflow `build-buick-apk`（push `carlife-port` 自动构建 `app-buick.apk` artifact）。
 
 ## 1. 目标与原则
 
@@ -17,7 +20,7 @@
 | 名称 | 用途 | 地址 |
 | --- | --- | --- |
 | `upstream` | 上游只读镜像（**只 fetch，不 push**） | `https://github.com/schemawisp/link_plus.git` |
-| `origin` | 本仓库 fork（**待 Lead 补实际 URL**） | `<fork-url 待补>` |
+| `origin` | 本仓库 fork | `https://github.com/LSJKC/link_plus.git` |
 
 分支约定：
 
