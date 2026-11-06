@@ -687,9 +687,9 @@ targetSdk = 34
 ```text
 platforms/android-34        已存在
 build-tools/34,36,37        有
-build-tools/35.0.0          缺失，需要装
+build-tools/35.0.0          已安装（2026-11-06 本机补装）
 ndk/27.3.13750724           有
-ndk/27.0.12077973           缺失，需要装
+ndk/27.0.12077973           已安装（2026-11-06 本机补装）
 ```
 
 安装：
@@ -748,6 +748,19 @@ app/build/outputs/apk/buick/app-buick.apk
 cd F:\carplay\_newproj\linkplus_carlife
 .\scripts\check-env.ps1
 .\gradlew.bat :app:assembleBuick
+```
+
+2026-11-06 本机已验证：
+
+```text
+BUILD SUCCESSFUL in 7m 32s
+```
+
+基线 APK：
+
+```text
+app/build/outputs/apk/buick/app-buick.apk
+SHA-256 E1658D3537D68E6D18B5C2B6C33F57A96CA0E6B459E52AB0594E81C5C99FE905
 ```
 
 如果 Gradle 下载依赖失败，先确认代理环境变量已设置，再重试。
