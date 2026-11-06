@@ -1,0 +1,45 @@
+name: build-buick-apk
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [carlife-port, main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK packages
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-34" "build-tools;35.0.0" "ndk;27.0.12077973"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build buick APK
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleBuick --no-daemon --console=plain
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-buick-apk
+          path: app/build/outputs/apk/buick/app-buick.apk
+          if-no-files-found: error
