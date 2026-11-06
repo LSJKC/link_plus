@@ -26,11 +26,14 @@ import androidx.core.net.toUri
 import androidx.fragment.app.Fragment
 import io.github.shaonialife.buicklinkplus.R
 import io.github.shaonialife.buicklinkplus.SettingsContentActivity
+import io.github.shaonialife.buicklinkplus.carlife.CarLifeGpsBridge
+import io.github.shaonialife.buicklinkplus.carlife.CarLifeNowPlaying
 import io.github.shaonialife.buicklinkplus.carlife.CarLifeProtocol
 import io.github.shaonialife.buicklinkplus.legal.DisclaimerDialog
 import io.github.shaonialife.buicklinkplus.session.SessionCommands
 import io.github.shaonialife.buicklinkplus.session.SessionController
 import io.github.shaonialife.buicklinkplus.ui.BuiltinWallpapers
+import io.github.shaonialife.buicklinkplus.ui.CarLifeHudReceiver
 import io.github.shaonialife.buicklinkplus.ui.PanelWindow
 import io.github.shaonialife.buicklinkplus.ui.WallpaperActivity
 import io.github.shaonialife.buicklinkplus.ui.WallpaperStore
@@ -398,6 +401,14 @@ class SettingsCategoryFragment : Fragment() {
                 text = "诊断信息：点「刷新状态」读取最近 CARLIFE 日志"
             }
         add(diag)
+        val mediaStatus =
+            TextView(context).apply {
+                textSize = 12f
+                setLineSpacing(2 * density, 1f)
+                setAppearanceTextColor(R.color.m3_on_var)
+                text = "媒体/封面：点「刷新状态」读取"
+            }
+        add(mediaStatus)
         val appContext = context.applicationContext
 
         fun refresh() {
@@ -427,6 +438,11 @@ class SettingsCategoryFragment : Fragment() {
                         buildString {
                             append("诊断信息（最近 CARLIFE 日志）：\n$recent")
                             source?.lastErrorText?.takeIf { it.isNotBlank() }?.let { append("\n最后错误：$it") }
+                        }
+                    mediaStatus.text =
+                        buildString {
+                            append("媒体/封面：")
+                            append(CarLifeNowPlaying.statusText())
                         }
                     engineStatus.text =
                         buildString {
@@ -468,10 +484,34 @@ class SettingsCategoryFragment : Fragment() {
         }
         action("刷新状态 / 端口自检") { refresh() }
         action("重连 CarLife 会话") { reconnect() }
+        // HUD/导航调试：向本机广播注入一条转向信息，验证 0x10030/0x5201 链路（无需 adb）。
+        action("发送 HUD 测试（右转 500m）") {
+            val intent =
+                Intent(CarLifeHudReceiver.ACTION_DEBUG_HUD)
+                    .setPackage(context.packageName)
+                    .putExtra(CarLifeHudReceiver.EXTRA_TURN, 3)
+                    .putExtra(CarLifeHudReceiver.EXTRA_REMAIN, 500)
+                    .putExtra(CarLifeHudReceiver.EXTRA_TOTAL, 4_200)
+                    .putExtra(CarLifeHudReceiver.EXTRA_ROAD, "测试路")
+            context.sendBroadcast(intent)
+            hostToast("已发送 HUD 测试（转向 500m）；实车仪表/CarPlay 导航条应更新，日志见 NAV")
+        }
+        action("停止 HUD 测试") {
+            val intent =
+                Intent(CarLifeHudReceiver.ACTION_DEBUG_HUD)
+                    .setPackage(context.packageName)
+                    .putExtra(CarLifeHudReceiver.EXTRA_STOP, true)
+            context.sendBroadcast(intent)
+            hostToast("已发送 HUD 停止")
+        }
         note("CarLife+ 引擎断开时画面源每 2 秒自动重试；会话重连需要车机连接环境仍然就绪。")
         switchRow("导航指引上行", "把 CarLife 导航信息同步给车机仪表", CarLifePrefs.navEnabled(context)) { enabled ->
             CarLifePrefs.setNavEnabled(context, enabled)
             hostToast(if (enabled) "导航指引已开启" else "导航指引已关闭")
+        }
+        switchRow("车机 GPS 转发", "手机定位 → CarLife 0x18010（车机导航可用更准定位）", CarLifeGpsBridge.isEnabled(context)) { enabled ->
+            CarLifeGpsBridge.setEnabled(context, enabled)
+            hostToast(if (enabled) "车机 GPS 转发已开启" else "车机 GPS 转发已关闭")
         }
         refresh()
     }

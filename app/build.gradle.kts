@@ -8,11 +8,11 @@ plugins {
 /**
  * 版本名可以重置，版本码始终递增，保证覆盖安装
  *
- * 0.2.1 (155)：实车测试包第二版（媒体 NowPlaying/封面测试版 + HUD/语音键/GPS +
+ * 0.2.2 (156)：UI 入口补齐版（媒体 NowPlaying/封面测试版 + HUD/语音键/GPS +
  * 98386 音频 48K key + 98311 saveArea + 设置开关接线 + 功能证据文档）。
  */
-val appVersionName = "0.2.1"
-val appVersionCode = 155
+val appVersionName = "0.2.2"
+val appVersionCode = 156
 
 /**
  * 从根目录的 keystore.properties 读取签名，缺少时使用 debug 签名

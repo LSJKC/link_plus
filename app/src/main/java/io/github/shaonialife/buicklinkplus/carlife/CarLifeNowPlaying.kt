@@ -161,6 +161,52 @@ object CarLifeNowPlaying {
     val artworkSnapshot: PreparedArtwork?
         get() = preparedArtwork
 
+    /** 已成功发送的 0x5001 次数（诊断/设置页展示用）。 */
+    @Volatile
+    var sentCount: Long = 0L
+        private set
+
+    /** 最近一次跳过发送的原因（诊断/设置页展示用）。 */
+    @Volatile
+    var lastSkipReason: String = ""
+        private set
+
+    /**
+     * 媒体/音乐订阅/封面准备状态摘要（设置页「CarLife」页展示）。
+     *
+     * 注意：封面目前**不声明 0x001A transferID**（k1 file-transfer 未接线），因此
+     * 车机不会显示封面；这里只显示本地压缩准备情况，便于实车日志核对。
+     */
+    fun statusText(): String {
+        val track = synchronized(lock) { currentTrack }
+        val link = VirtualIap2Link.active
+        val art = preparedArtwork
+        return buildString {
+            append("媒体：")
+            if (track == null) {
+                append("暂无")
+            } else {
+                append("${track.title ?: "?"} / ${track.artist ?: "?"} / ${track.album ?: "?"}")
+            }
+            append(" · 已发 $sentCount 次")
+            append("\n订阅：")
+            append(
+                when {
+                    link == null -> "无 AirPlay 虚拟 iAP2 链路"
+                    link.nowPlayingSubscribed -> "已订阅 0x5000"
+                    else -> "未订阅 0x5000"
+                },
+            )
+            append(" · 封面：")
+            if (art == null) {
+                append(if (artworkEnabled) "无（未收到/解码中）" else "已关闭")
+            } else {
+                append("${art.width}×${art.height} ${art.jpeg.size}B transferID=${art.transferId ?: "未分配"}")
+            }
+            lastSkipReason.takeIf { it.isNotBlank() }?.let { append("\n最近跳过：").append(it) }
+        }
+    }
+
     private var executor: ExecutorService? = null
 
     private val emptyTrack =
@@ -410,7 +456,10 @@ object CarLifeNowPlaying {
         val ok = link.sendNowPlaying(body)
         synchronized(lock) {
             lastSendAt = System.currentTimeMillis()
-            if (ok) lastSentKey = key
+            if (ok) {
+                lastSentKey = key
+                sentCount++
+            }
         }
         nowPlayingLog(
             "NOWPLAYING: 0x5001 ${if (ok) "已发" else "发送失败"} title=${track.title} " +
@@ -570,6 +619,7 @@ object CarLifeNowPlaying {
         }
 
     private fun logSkip(reason: String) {
+        lastSkipReason = reason
         val now = System.currentTimeMillis()
         synchronized(lock) {
             if (now - lastSkipLogAt < SKIP_LOG_INTERVAL_MS) return
