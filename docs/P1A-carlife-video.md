@@ -100,7 +100,7 @@ VideoSender 编码器输入 Surface（link_plus 原有 H.264 编码 → AirPlay 
 | 单元测试 | `.\gradlew.bat :app:testBuickUnitTest` | 120 个测试类 / 618 个用例，0 failure / 0 error；其中 CarLife 相关 33 项全通过 |
 | 构建 | `.\gradlew.bat :app:assembleBuick` | BUILD SUCCESSFUL（1m28s，含 lintVital） |
 | Lint | `.\gradlew.bat :app:lintBuick :app:lintDebug` | BUILD SUCCESSFUL（warningsAsErrors 全绿） |
-| 产物 | `app/build/outputs/apk/buick/app-buick.apk` | 26,894,933 B，SHA-256 `EDB02876714072826450DE049FA7815637818B50115EFCD485020AA251337726` |
+| 产物 | `app/build/outputs/apk/buick/app-buick.apk` | 26,894,933 B，SHA-256 `EB68FF5B6AA5B0B68681C205D8383A1C06079B8B4CB18DFE9C7B63CC17198F3E`；versionCode=153 / versionName=0.1.0（debug/buick 签名，重新构建时 hash 会变化） |
 | 实车/真机 | — | **PENDING**：`adb devices` 无设备，安装/连接/画面/音频/触摸验收待接手机+车机后执行 |
 
 CarLife 相关单测明细：`CarLifeProtocolTouchTest` 4、`CarLifeCarGpsTest` 6、`InitOrderTest` 3、
