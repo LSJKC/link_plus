@@ -230,46 +230,6 @@ object WallpaperStore {
         uri: Uri,
     ): Boolean = save(context, uri, false, WallpaperCalibration())
 
-    /**
-     * 内置壁纸：直接从 Bitmap 写入用户壁纸文件，不经过内容 Uri。
-     *
-     * 与 [save] 语义一致：先落盘图片，再提交引用和默认校准，最后通知一次变更。
-     */
-    @Synchronized
-    // 后台事务同步落盘并检查结果，成功后才释放旧资源或通知监听者
-    @android.annotation.SuppressLint("UseKtx", "ApplySharedPref")
-    fun saveBuiltin(
-        context: Context,
-        bitmap: Bitmap,
-    ): Boolean {
-        val prefs = context.getSharedPreferences("wallpaper_calibration", Context.MODE_PRIVATE)
-        val previous = userWallpaperFile(context)
-        val previousImage = prefs.getString("image", USER_FILE)
-        val destination = File(context.filesDir, "wallpaper-${java.util.UUID.randomUUID()}.jpg")
-        return try {
-            java.io.FileOutputStream(destination).use { output ->
-                check(bitmap.compress(Bitmap.CompressFormat.JPEG, 92, output)) { "无法编码内置壁纸" }
-                output.fd.sync()
-            }
-            check(
-                prefs
-                    .edit()
-                    .putString("image", destination.name)
-                    .putInt("zoom", 100)
-                    .putInt("x", 0)
-                    .putInt("y", 0)
-                    .commit(),
-            ) { "无法保存壁纸配置" }
-            if (previous != null && previous.name != destination.name) previous.delete()
-            markChanged()
-            true
-        } catch (_: Exception) {
-            destination.delete()
-            runCatching { prefs.edit().putString("image", previousImage).commit() }
-            false
-        }
-    }
-
     /** 清除壁纸并重置画面位置 */
     fun resetToDefault(context: Context): Boolean = save(context, null, true, WallpaperCalibration())
 

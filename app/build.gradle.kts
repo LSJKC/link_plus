@@ -8,11 +8,11 @@ plugins {
 /**
  * 版本名可以重置，版本码始终递增，保证覆盖安装
  *
- * 0.2.2 (156)：UI 入口补齐版（媒体 NowPlaying/封面测试版 + HUD/语音键/GPS +
- * 98386 音频 48K key + 98311 saveArea + 设置开关接线 + 功能证据文档）。
+ * 版本名跟随上游 link_plus：上游 0.0.9 → 本仓库 "0.0.9-carlife"；上游升级时同步前缀。
+ * 同一上游版本内多次修复可加后缀 .2/.3；versionCode 每次出包 +1（Android 只认这个）。
  */
-val appVersionName = "0.2.2"
-val appVersionCode = 156
+val appVersionName = "0.0.9-carlife"
+val appVersionCode = 157
 
 /**
  * 从根目录的 keystore.properties 读取签名，缺少时使用 debug 签名

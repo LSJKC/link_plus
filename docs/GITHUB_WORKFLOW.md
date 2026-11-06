@@ -152,3 +152,5 @@ Get-FileHash app\build\outputs\apk\buick\app-buick.apk -Algorithm SHA256
 - 是否需要 GitHub Actions CI（构建/单测/lint）；
 - 分支保护规则（`main` 禁止直推、`carlife-port` 要求 PR？）；
 - Issue 模板 / 实车反馈渠道（日志上传方式、机型模板）。
+
+> 版本与 Release 命名约定（2026-11-06 起）：versionName 跟随上游，例如上游 0.0.9 → `0.0.9-carlife`；versionCode 每次出包 +1（Android 只认 versionCode）。Release tag 用 `v0.0.9-carlife`，资产名 `app-buick-0.0.9-carlife.apk`。

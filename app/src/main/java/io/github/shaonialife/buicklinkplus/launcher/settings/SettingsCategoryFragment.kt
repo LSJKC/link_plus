@@ -14,7 +14,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
@@ -32,7 +31,6 @@ import io.github.shaonialife.buicklinkplus.carlife.CarLifeProtocol
 import io.github.shaonialife.buicklinkplus.legal.DisclaimerDialog
 import io.github.shaonialife.buicklinkplus.session.SessionCommands
 import io.github.shaonialife.buicklinkplus.session.SessionController
-import io.github.shaonialife.buicklinkplus.ui.BuiltinWallpapers
 import io.github.shaonialife.buicklinkplus.ui.CarLifeHudReceiver
 import io.github.shaonialife.buicklinkplus.ui.PanelWindow
 import io.github.shaonialife.buicklinkplus.ui.WallpaperActivity
@@ -524,66 +522,9 @@ class SettingsCategoryFragment : Fragment() {
         note: (String) -> Unit,
         action: (String, () -> Unit) -> Unit,
     ) {
-        note("内置壁纸来自旧版龟壳；点选即应用到本机壁纸（合成器下次出帧生效）。")
-        val density = resources.displayMetrics.density
         val appContext = context.applicationContext
-        val grid = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-        BuiltinWallpapers.TITLES.indices.chunked(3).forEach { indices ->
-            val line =
-                LinearLayout(context).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                }
-            indices.forEach { index ->
-                val cell =
-                    LinearLayout(context).apply {
-                        orientation = LinearLayout.VERTICAL
-                        gravity = android.view.Gravity.CENTER
-                        isFocusable = true
-                        isClickable = true
-                        setPadding(
-                            (4 * density).toInt(),
-                            (4 * density).toInt(),
-                            (4 * density).toInt(),
-                            (4 * density).toInt(),
-                        )
-                        setOnClickListener {
-                            BuiltinWallpapers.applyAsync(context, index) { error ->
-                                if (isAdded) hostToast(error ?: "已应用内置壁纸：${BuiltinWallpapers.TITLES[index]}")
-                            }
-                        }
-                    }
-                val image =
-                    ImageView(context).apply {
-                        scaleType = ImageView.ScaleType.CENTER_CROP
-                        setBackgroundColor(0xFF161326.toInt())
-                        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-                    }
-                cell.addView(image, LinearLayout.LayoutParams(-1, (86 * density).toInt()))
-                cell.addView(
-                    TextView(context).apply {
-                        text = BuiltinWallpapers.TITLES[index]
-                        textSize = 12f
-                        gravity = android.view.Gravity.CENTER
-                        setAppearanceTextColor(R.color.m3_on_var)
-                    },
-                    LinearLayout.LayoutParams(-1, -2).apply { topMargin = (4 * density).toInt() },
-                )
-                line.addView(
-                    cell,
-                    LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = (6 * density).toInt() },
-                )
-                Bg.run("builtin-wallpaper-thumb") {
-                    val bitmap = BuiltinWallpapers.loadThumb(appContext, index, 240)
-                    if (bitmap != null) {
-                        android.os.Handler(android.os.Looper.getMainLooper()).post {
-                            if (isAdded) image.setImageBitmap(bitmap)
-                        }
-                    }
-                }
-            }
-            grid.addView(line, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = (6 * density).toInt() })
-        }
-        add(grid)
+        note("壁纸用于 CarLife 画面合成背景：选择自己的图片后，合成器按画布 cover 自动铺满；在「显示与画面 → 壁纸背景」可临时关闭，关闭后用纯色底。")
+        note("为避免再分发第三方闭源资源，本版不内置壁纸图片，仅支持导入自己的图片。")
         action("打开壁纸编辑器（自定义图片）") {
             startActivity(Intent(context, WallpaperActivity::class.java))
         }
@@ -595,7 +536,6 @@ class SettingsCategoryFragment : Fragment() {
                 }
             }
         }
-        note("壁纸背景开关在「显示与画面」中；关闭后使用纯色背景。")
     }
 
     // ==================== 日志与关于 ====================

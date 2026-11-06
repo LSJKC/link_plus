@@ -43,4 +43,11 @@ APK 位于 `app/build/outputs/apk/buick/app-buick.apk`，测试包使用 `.buick
 
 本项目基于 [shaonialife/cardeck](https://github.com/shaonialife/cardeck)，保留原始 [MIT 许可与版权声明](LICENSE)。第三方组件遵循各自许可，详见上面的许可说明。
 
-这是非官方项目，与别克、通用汽车、Apple 无关联，也未获其授权或认证。相关商标归各自所有者，应用名称只用于说明适配用途。
+**代码来源与归属**
+
+- 上游基线：[schemawisp/link_plus](https://github.com/schemawisp/link_plus)（MIT）——本仓库是它的下游 fork，保留上游 LICENSE。
+- CarLife 协议/客户端/视频处理/媒体逻辑部分移植自 [CarPToCarL](https://github.com/jjuugk/CarPToCarL) commit `7b729fb`（MIT，Copyright (c) 2026 lizhihua），并做了包名适配与无 ADB 化改造；逐文件说明见 [docs/third-party/CarPToCarL-NOTICE.md](docs/third-party/CarPToCarL-NOTICE.md)，源码文件头也保留了来源注释。
+- 旧插桩工程 `hybrid63` 仅作为行为/协议参考，其闭源 APK 资源（含壁纸图片）不随本仓库分发；本仓库不内置第三方壁纸，改用用户自定义壁纸。
+- 上游与参考实现的 MIT 版权与许可声明均保留；再分发时请一并保留。
+
+这是非官方项目，与别克、通用汽车、Apple、百度无关联，也未获其授权或认证。相关商标归各自所有者，应用名称只用于说明适配用途。

@@ -42,3 +42,45 @@ DEALINGS IN THE SOFTWARE.
 
 
 
+
+------------------------------------------------------------
+
+代码来源与 MIT 归属（APK 内置声明）
+
+1) 上游基线 link_plus（MIT License, Copyright (c) 2026 lizhihua）
+   https://github.com/schemawisp/link_plus
+   本 APK 是其下游 CarLife 适配版本，保留上游 MIT 许可与版权声明。
+
+2) CarPToCarL（MIT License, Copyright (c) 2026 lizhihua）
+   https://github.com/jjuugk/CarPToCarL commit 7b729fb
+   本 APK 的 CarLife 协议/客户端/视频处理/媒体逻辑部分移植自此项目，
+   并做了包名适配与内置 ADB 移除改造。原始 MIT 许可全文见
+   docs/third-party/CarPToCarL-NOTICE.md。
+
+3) cardeck（MIT License）—— link_plus 的上游参考项目。
+   https://github.com/shaonialife/cardeck
+
+以上 MIT 许可全文均允许复制、修改、再分发，要求保留版权与许可声明；
+本文件即 APK 内置的保留声明。
+
+------------------------------------------------------------
+
+MIT License（link_plus / cardeck / CarPToCarL 共用，Copyright (c) 2026 lizhihua）
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
