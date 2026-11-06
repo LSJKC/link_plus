@@ -25,8 +25,10 @@ import java.util.concurrent.atomic.AtomicReference
  *
  * 生命周期：[attach] 只存参数、起一条后台管理线程并立即返回（CarLife 引擎通常还没起来，
  * 用户手动打开 CarLife+ 的「无线连接」后才可用）；管理线程循环创建 [CarLifeHuClient]，
- * 连不上就每 2s 重试，连上后持续转发视频帧、断线后自动收尾重连。[detach] 停客户端/解码器/
- * 管理线程，幂等；之后再次 [attach] 可重新工作。
+ * 连不上就每 2s 重试，连上后持续转发视频帧、断线后自动收尾重连。[detach] 只做置停止态/
+ * 关 socket/拒绝新解码任务等 O(1) 操作就立即返回，解码器与管理线程的 stop/join 交给 daemon
+ * 清理线程（本方法在 SessionController 的 synchronized 锁内调用，阻塞会有主线程 ANR 风险）；
+ * 幂等，之后再次 [attach] 可重新工作。
  *
  * 视频路径（全部不阻塞 CarLife 视频读线程）：
  * ```
@@ -37,11 +39,14 @@ import java.util.concurrent.atomic.AtomicReference
  * ```
  * 解码器生命周期（创建/重建/停止）收敛到单线程 [Session.executor]，只在
  * 「CSD 就绪」「SPS 分辨率变化」「解码线程退出」时调度，避免在视频读线程上做 MediaCodec 操作。
+ * 同一编码器输入 Surface 上**绝不并发两个解码器**：[CarLifeVideoDecoder.stopAndWait] 超时
+ * （旧线程仍在渲染）时由 [RetiringDecoderGate] 挂门，线程真正退出前拒绝新建。
  *
  * 诊断：对外暴露 [isEngineConnected]/[deliveredFrames]/[streamWidth]/[streamHeight]/
  * [lastErrorText]，供会话日志采样；关键日志含 `carlife connected` / `decoder out` / `fit`。
- * 等待连接的重试日志限流（首次即时、之后最多每 10s 一行）；已握手但 ≥5s 无视频帧时输出
- * 一行带 CSD/码流尺寸的看门狗日志，方便现场区分「手机没进无线连接」与「有码流但解不出」。
+ * 等待连接的重试日志限流（首次即时、之后最多每 10s 一行）；已握手但 ≥5s 无视频帧、或持续
+ * 收帧但 ≥8s 无解码输出（CSD 缺失/解码器静默不出帧）时各输出诊断行，后者会重发 98311
+ * 重建引擎编码器，尝试把永久黑屏救回来。
  */
 class CarLifeScreenSource(
     private val context: Context,
@@ -95,7 +100,15 @@ class CarLifeScreenSource(
         streamWidth = 0
         streamHeight = 0
 
-        val newSession = Session(surface, width, height, targetFps)
+        val newSession =
+            Session(
+                surface,
+                width,
+                height,
+                targetFps,
+                noDecodeWatchdog = NoDecodeWatchdog(NO_DECODE_WARN_MS, NO_DECODE_WARN_INTERVAL_MS),
+                retiringLog = LogThrottle(RETIRING_LOG_INTERVAL_MS),
+            )
         newSession.pipeline =
             CarLifeVideoPipeline(
                 object : CarLifeVideoPipeline.Listener {
@@ -135,6 +148,8 @@ class CarLifeScreenSource(
         doomed.active = false
         synchronized(doomed.lock) { doomed.lock.notifyAll() }
         log("CARLIFE: 停止内容源（客户端/解码器/管理线程）")
+        // 快速路径：本方法在 SessionController 的 synchronized 锁内调用（取消/断开），任何 join
+        // 都会顶到主线程；所以这里只做 O(1) 的「让各线程尽快收敛」动作，慢路径见 cleanupDetached。
         // 先停客户端以解除 socket 读写阻塞，管理线程才能尽快退出。
         val client = doomed.client
         doomed.client = null
@@ -144,17 +159,43 @@ class CarLifeScreenSource(
             lastErrorText = "停止 CarLife 客户端失败：${error.message}"
             log("CARLIFE: 停止客户端异常 - ${error.message}")
         }
-        // 先关 codec 生命周期线程，避免停止过程中又新建解码器。
+        // 关 codec 生命周期线程（shutdownNow 立即返回；epoch 自增让在途创建任务作废）。
         doomed.executor.shutdownNow()
+        doomed.decoderEpoch.incrementAndGet()
         doomed.pendingKeyFrame = null
         val decoder = doomed.decoder.getAndSet(null)
-        if (decoder != null) {
-            val exited = decoder.stopAndWait(DECODER_STOP_TIMEOUT_MS)
-            if (!exited) {
+        // 诊断字段立即复位：旧会话回调都带 isCurrent(session) 闸门，不会再把它们改回去。
+        isEngineConnected = false
+        streamWidth = 0
+        streamHeight = 0
+        // 慢路径（解码线程 join / 管理线程 join / 收尾日志）交给 daemon 线程：只捕获 doomed
+        // 这一代会话的引用，因此绝不会碰到随后 attach 的新会话。
+        Thread({ cleanupDetached(doomed, decoder) }, DETACH_THREAD_NAME).apply {
+            isDaemon = true
+            start()
+        }
+    }
+
+    /**
+     * [detach] 的慢路径（daemon 线程）：停解码器、等管理线程退出，然后打收尾日志。
+     *
+     * 只使用捕获的 [session] 引用，与随后 [attach] 的新会话完全隔离；即使超时也只会给
+     * 已退役会话挂退休门并打日志，不会阻塞或弄脏新会话。
+     */
+    private fun cleanupDetached(
+        session: Session,
+        decoder: CarLifeVideoDecoder?,
+    ) {
+        val target = decoder ?: session.retiringGate.retiring
+        if (target != null) {
+            val exited = target.stopAndWait(DECODER_STOP_TIMEOUT_MS)
+            if (!exited || target.isThreadAlive()) {
+                // 旧线程仍可能渲染：挂门（本会话已退役，仅保留引用让 GC 在它退出后回收），不泄漏 Surface。
+                session.retiringGate.retire(target)
                 log("CARLIFE-VIDEO: 解码线程未在 ${DECODER_STOP_TIMEOUT_MS}ms 内退出")
             }
         }
-        val manager = doomed.manager
+        val manager = session.manager
         if (manager != null && manager !== Thread.currentThread()) {
             try {
                 manager.join(MANAGER_JOIN_TIMEOUT_MS)
@@ -165,9 +206,6 @@ class CarLifeScreenSource(
                 log("CARLIFE: 管理线程未在 ${MANAGER_JOIN_TIMEOUT_MS}ms 内退出（可能仍在等待引擎连接超时），已放弃等待")
             }
         }
-        isEngineConnected = false
-        streamWidth = 0
-        streamHeight = 0
         log("CARLIFE: 内容源已停止")
     }
 
@@ -237,25 +275,45 @@ class CarLifeScreenSource(
             setLastError(session, "")
             setEngineConnected(session, true)
             session.lastFrameAt = SystemClock.uptimeMillis()
+            // 解码进度看门狗基线：以本轮连接时的累计解码帧为起点，避免把上一轮进度算进来。
+            val framesAtConnect = session.framesReceived
+            session.noDecodeWatchdog.reset(deliveredFrames)
             logForSession(session, "CARLIFE: carlife connected 127.0.0.1（握手成功，等待视频帧）")
             var lastNoVideoWarnAt = 0L
             while (session.active && isCurrent(session) && client.isRunning) {
                 sleepWhileActive(session, STATUS_POLL_MS)
                 if (!session.active || !isCurrent(session) || !client.isRunning) break
-                // 已握手但长时间没有视频帧：诊断行带上管线状态（CSD 是否就绪、SPS 码流尺寸），
-                // 现场一眼看出是「没进无线连接/手机没内容」还是「有码流但 SPS 没解析到」。
                 val now = SystemClock.uptimeMillis()
+                // 看门狗 1：已握手但长时间没有视频帧（诊断行带管线状态，区分没进无线连接 vs SPS 没解析到）。
                 val idle = now - session.lastFrameAt
-                if (idle < NO_VIDEO_WARN_MS) continue
-                if (lastNoVideoWarnAt != 0L && now - lastNoVideoWarnAt < NO_VIDEO_WARN_INTERVAL_MS) continue
-                lastNoVideoWarnAt = now
-                val csdText = if (session.pipeline?.hasCsd == true) "已就绪" else "缺失"
-                val streamText = session.pipeline?.streamSize?.let { "${it.first}x${it.second}" } ?: "未知"
-                logForSession(
-                    session,
-                    "CARLIFE: 已握手但 ${idle / 1000}s 无视频帧" +
-                        "（检查 CarLife+ 是否进入无线连接/是否有内容；CSD=$csdText，码流=$streamText）",
-                )
+                if (idle >= NO_VIDEO_WARN_MS &&
+                    (lastNoVideoWarnAt == 0L || now - lastNoVideoWarnAt >= NO_VIDEO_WARN_INTERVAL_MS)
+                ) {
+                    lastNoVideoWarnAt = now
+                    val csdText = if (session.pipeline?.hasCsd == true) "已就绪" else "缺失"
+                    val streamText = session.pipeline?.streamSize?.let { "${it.first}x${it.second}" } ?: "未知"
+                    logForSession(
+                        session,
+                        "CARLIFE: 已握手但 ${idle / 1000}s 无视频帧" +
+                            "（检查 CarLife+ 是否进入无线连接/是否有内容；CSD=$csdText，码流=$streamText）",
+                    )
+                }
+                // 看门狗 2：持续收帧但解码输出不涨（无 CSD / 解码器 HAL 静默不出帧 → 永久黑屏）。
+                val received = session.framesReceived - framesAtConnect
+                if (session.noDecodeWatchdog.shouldWarn(received, deliveredFrames, now)) {
+                    val csdText = if (session.pipeline?.hasCsd == true) "已就绪" else "缺失"
+                    logForSession(
+                        session,
+                        "CARLIFE-VIDEO: 持续收帧但无解码输出（CSD=$csdText，已收帧=$received，" +
+                            "已解码=$deliveredFrames，尝试重发 98311 重建引擎编码器）",
+                    )
+                    // 重发 98386+98311 让引擎重建编码器：无 CSD 时会补 SPS/PPS+IDR，解码器静默死锁时也换新流。
+                    client.requestVideoReinit()
+                    // 解码器还在但不出帧：顺便重建一次解码器（退休门保证不会出现双 producer）。
+                    if (session.decoder.get() != null) {
+                        scheduleDecoderRecreate(session, "持续收帧但无解码输出")
+                    }
+                }
             }
             setEngineConnected(session, false)
             if (session.active && isCurrent(session)) {
@@ -286,6 +344,7 @@ class CarLifeScreenSource(
         if (!isCurrent(session)) return
         // 无视频帧看门狗用：任意一帧（解码前也算）都证明码流还活着。
         session.lastFrameAt = SystemClock.uptimeMillis()
+        session.framesReceived++
         val decoder = session.decoder.get()
         if (decoder != null) {
             // 解码器已就绪：不再需要为「晚建解码器」保留关键帧。
@@ -331,6 +390,8 @@ class CarLifeScreenSource(
             return
         }
         if (SystemClock.uptimeMillis() < session.nextCreateAt) return
+        // 退休门：旧解码线程还没退时绝不新建（否则同一 Surface 双 producer）。
+        if (!canCreateDecoder(session)) return
         if (!session.decoderScheduled.compareAndSet(false, true)) return
         val epoch = session.decoderEpoch.get()
         try {
@@ -367,7 +428,9 @@ class CarLifeScreenSource(
                     val old = session.decoder.getAndSet(null)
                     session.appliedWidth = 0
                     session.appliedHeight = 0
-                    old?.stopAndWait(DECODER_STOP_TIMEOUT_MS)
+                    // 旧解码器没退干净时挂门并放弃本次新建：等它真正退出后由 handleFrame 重新调度，
+                    // 绝不在同一编码器 Surface 上并发出两个解码器。
+                    if (!retireDecoder(session, old)) return@execute
                     createDecoder(session, epoch)
                 } finally {
                     session.decoderScheduled.set(false)
@@ -385,6 +448,8 @@ class CarLifeScreenSource(
         epoch: Int,
     ) {
         if (!session.active || !isCurrent(session) || session.decoderEpoch.get() != epoch) return
+        // 双重保险：调度后到真正执行之间可能又有解码器被停超时挂门（退休门是唯一放行依据）。
+        if (!canCreateDecoder(session)) return
         if (!session.surface.isValid) {
             noteSurfaceInvalid(session)
             return
@@ -407,7 +472,7 @@ class CarLifeScreenSource(
             )
         decoder.setCsd(sps, pps)
         if (!decoder.start()) {
-            decoder.stopAndWait(DECODER_STOP_TIMEOUT_MS)
+            retireDecoder(session, decoder)
             session.nextCreateAt = SystemClock.uptimeMillis() + CREATE_RETRY_DELAY_MS
             setLastError(session, "解码器启动失败（${size.first}x${size.second}）")
             logForSession(session, "CARLIFE-VIDEO: 解码器启动失败，${CREATE_RETRY_DELAY_MS}ms 后重试")
@@ -419,7 +484,7 @@ class CarLifeScreenSource(
         session.nextCreateAt = 0L
         if (!session.active || !isCurrent(session) || session.decoderEpoch.get() != epoch) {
             // 创建期间会话已收尾/尺寸已再次变化：丢弃刚建好的解码器，避免泄漏与抢同一 Surface。
-            if (session.decoder.compareAndSet(decoder, null)) decoder.stopAndWait(DECODER_STOP_TIMEOUT_MS)
+            if (session.decoder.compareAndSet(decoder, null)) retireDecoder(session, decoder)
             return
         }
         // 先投喂建解码器期间暂存的关键帧（通常就是首帧 SPS+PPS+IDR）；没有暂存帧时用管线缓存的
@@ -445,8 +510,50 @@ class CarLifeScreenSource(
         session.nextCreateAt = 0L
         if (decoder != null) {
             logForSession(session, "CARLIFE-VIDEO: 停止解码器")
-            decoder.stopAndWait(DECODER_STOP_TIMEOUT_MS)
+            retireDecoder(session, decoder)
         }
+    }
+
+    /**
+     * 停一个解码器，若 [CarLifeVideoDecoder.stopAndWait] 超时（线程仍可能渲染同一个编码器
+     * 输入 Surface）就把实例挂到退休门，让之后的新建全部推迟到它真正退出。
+     *
+     * @return true = 线程已退出，可以继续新建；false = 线程仍存活，已挂门（调用方不得新建）。
+     */
+    private fun retireDecoder(
+        session: Session,
+        decoder: CarLifeVideoDecoder?,
+    ): Boolean {
+        if (decoder == null) return true
+        decoder.stopAndWait(DECODER_STOP_TIMEOUT_MS)
+        // 必须用 isThreadAlive 而不是 isAlive：stop 超时后 running 已置 false，isAlive 会误报 false，
+        // 而线程可能还在 releaseOutputBuffer(render=true)。
+        if (!decoder.isThreadAlive()) return true
+        session.retiringGate.retire(decoder)
+        logForSession(
+            session,
+            "CARLIFE-VIDEO: 旧解码线程未在 ${DECODER_STOP_TIMEOUT_MS}ms 内退出，推迟新建解码器" +
+                "（同一编码器 Surface 禁止双生产者）",
+        )
+        return false
+    }
+
+    /**
+     * 退休门检查：旧解码线程还活着就推迟新建（[RETIRING_RETRY_DELAY_MS] 后重试，日志限流）。
+     *
+     * @return true = 可以新建；false = 旧线程仍存活，本次必须放弃。
+     */
+    private fun canCreateDecoder(session: Session): Boolean {
+        if (session.retiringGate.canCreate()) return true
+        session.nextCreateAt = SystemClock.uptimeMillis() + RETIRING_RETRY_DELAY_MS
+        if (session.retiringLog.allow("retiring")) {
+            logForSession(
+                session,
+                "CARLIFE-VIDEO: 旧解码线程未退出，推迟新建解码器" +
+                    "（同一编码器 Surface 禁止双生产者，${RETIRING_RETRY_DELAY_MS}ms 后重试）",
+            )
+        }
+        return false
     }
 
     // ---- 日志/诊断/睡眠工具 ----
@@ -576,6 +683,10 @@ class CarLifeScreenSource(
         val width: Int,
         val height: Int,
         val fps: Int,
+        /** 持续收帧但无解码输出的看门狗状态机（纯逻辑，可 JVM 单测）。 */
+        val noDecodeWatchdog: NoDecodeWatchdog,
+        /** 退休门推迟日志限流（旧解码线程长时间不退时避免每 1s 刷一行）。 */
+        val retiringLog: LogThrottle,
     ) {
         // 此监视器需要 wait/notify，保留 Java Object 的显式接口（见 BtSessionGate 同样写法）
         @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN")
@@ -600,6 +711,13 @@ class CarLifeScreenSource(
         /** 最近一次收到视频帧的时刻（uptimeMillis；握手成功时也会重置）。无视频帧看门狗用。 */
         @Volatile
         var lastFrameAt = 0L
+
+        /** 本次会话累计收到的视频帧数（无解码输出看门狗用）。 */
+        @Volatile
+        var framesReceived = 0L
+
+        /** 停超时解码器的退休门：旧解码线程真正退出前，禁止在同一编码器输入 Surface 上新建。 */
+        val retiringGate = RetiringDecoderGate<CarLifeVideoDecoder> { decoder -> decoder.isThreadAlive() }
 
         /** 解码器生命周期单线程：MediaCodec 创建/配置/stop 都不在视频读线程上做。 */
         val executor: ExecutorService =
@@ -641,9 +759,115 @@ class CarLifeScreenSource(
         /** 同一会话里无视频帧告警的最小重复间隔（毫秒）。 */
         private const val NO_VIDEO_WARN_INTERVAL_MS = 5_000L
 
+        /** 持续收帧但连续多久没有解码输出就告警/恢复（毫秒）。 */
+        private const val NO_DECODE_WARN_MS = 8_000L
+
+        /** 无解码输出告警与恢复动作（重发 98311）的最小重复间隔（毫秒）。 */
+        private const val NO_DECODE_WARN_INTERVAL_MS = 15_000L
+
+        /** 退休门推迟新建后的复查间隔（毫秒）：旧解码线程退出前每 1s 重试一次。 */
+        private const val RETIRING_RETRY_DELAY_MS = 1_000L
+
+        /** 退休门推迟日志限流窗口（毫秒）。 */
+        private const val RETIRING_LOG_INTERVAL_MS = 5_000L
+
         private const val DECODER_STOP_TIMEOUT_MS = 800L
+        private const val DETACH_THREAD_NAME = "carlife-detach"
         private const val CREATE_RETRY_DELAY_MS = 2_000L
         private const val MANAGER_JOIN_TIMEOUT_MS = 1_500L
         private const val FRAME_LOG_INTERVAL = 150L
+    }
+}
+
+/**
+ * 「退休解码器」门（纯 Kotlin、无 Android 依赖，JVM 可单测）。
+ *
+ * 背景：[CarLifeVideoDecoder.stopAndWait] 超时时解码线程可能仍在把帧渲染到**同一个**编码器
+ * 输入 Surface；此时若新建解码器，同一个 BufferQueue 会出现两个 producer（画面错乱/花屏/崩溃）。
+ * 所以旧线程真正退出前必须禁止新建——本门只记录「停超时的解码器」，由调用方注入线程存活判断。
+ *
+ * @param isThreadAlive 判断「该解码器的解码线程是否仍存活」（调用方注入，便于脱离 Android 单测）。
+ */
+internal class RetiringDecoderGate<T : Any>(
+    private val isThreadAlive: (T) -> Boolean,
+) {
+    /** 停超时、可能仍在渲染的解码器；null = 无退休解码器。 */
+    @Volatile
+    var retiring: T? = null
+        private set
+
+    /** @return true = 没有退休解码器/其线程已退出（可以新建）；false = 旧线程仍活着，必须推迟。 */
+    fun canCreate(): Boolean {
+        val current = retiring ?: return true
+        if (isThreadAlive(current)) return false
+        // 线程已真正退出：清门放行，之后再建解码器不会再有双 producer。
+        retiring = null
+        return true
+    }
+
+    /** 记录一个 stop 超时、线程可能仍在渲染的解码器。 */
+    fun retire(decoder: T) {
+        retiring = decoder
+    }
+}
+
+/**
+ * 「持续收帧但无解码输出」看门狗状态机（纯 Kotlin、无 Android 依赖，JVM 可单测）。
+ *
+ * 只在「确实收到帧、但解码输出计数持续不涨」超过 [stallMs] 时放行一次告警（之后至少隔
+ * [repeatMs] 再放行），用来发现两种永久黑屏：码流有但 CSD/SPS 始终解析不到；解码器 HAL
+ * 静默不出帧。调用方拿到 [shouldWarn] == true 后负责重发 98311 重建引擎编码器。
+ *
+ * 线程模型：只在管理线程（连接等待循环）里调用，内部不加锁。
+ */
+internal class NoDecodeWatchdog(
+    private val stallMs: Long,
+    private val repeatMs: Long,
+) {
+    /** 上次观测到的累计解码帧数基线。 */
+    private var lastDecoded = 0L
+
+    /** 本轮「收帧但无解码进度」的起始时刻（<0 = 尚未建立基线）。 */
+    private var stallSince = -1L
+
+    /** 上次放行告警的时刻（<0 = 还没告警过）。 */
+    private var lastWarnAt = -1L
+
+    /** 连接（重新）建立时调用：以当前累计解码帧为基线，避免把上一轮的进度算进本轮。 */
+    fun reset(decoded: Long) {
+        lastDecoded = decoded
+        stallSince = -1L
+        lastWarnAt = -1L
+    }
+
+    /**
+     * @param framesReceived 本轮连接已收到的视频帧数（相对计数；0 = 还没收到帧，不判故障）
+     * @param decoded 累计已渲染输出帧数（绝对计数）
+     * @param nowMs 当前时刻（调用方时钟，毫秒）
+     * @return true = 现在应输出告警并触发恢复动作
+     */
+    fun shouldWarn(
+        framesReceived: Long,
+        decoded: Long,
+        nowMs: Long,
+    ): Boolean {
+        if (framesReceived <= 0L) {
+            stallSince = -1L
+            return false
+        }
+        if (decoded > lastDecoded) {
+            // 解码进度在涨：健康，重新开始计时。
+            lastDecoded = decoded
+            stallSince = -1L
+            return false
+        }
+        if (stallSince < 0L) {
+            stallSince = nowMs
+            return false
+        }
+        if (nowMs - stallSince < stallMs) return false
+        if (lastWarnAt >= 0L && nowMs - lastWarnAt < repeatMs) return false
+        lastWarnAt = nowMs
+        return true
     }
 }

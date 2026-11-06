@@ -260,6 +260,15 @@ class CarLifeVideoDecoder(
     /** 是否正在解码（running 且线程存活）。 */
     fun isAlive(): Boolean = running && (decodeThread?.isAlive == true)
 
+    /**
+     * 解码线程是否仍存活（**含 [stopAndWait] 超时后的残留线程**）。
+     *
+     * 与 [isAlive] 的区别：stopAndWait 超时后 running 已置 false，[isAlive] 会返回 false，
+     * 但解码线程可能仍在 `releaseOutputBuffer(render=true)`。上层「同一 Surface 禁止双生产者」
+     * 的退休门必须用本方法判断，否则会在旧线程仍渲染时新建解码器。
+     */
+    fun isThreadAlive(): Boolean = synchronized(lock) { decodeThread?.isAlive == true }
+
     // ---- 解码线程 ----
 
     private fun decodeLoop() {

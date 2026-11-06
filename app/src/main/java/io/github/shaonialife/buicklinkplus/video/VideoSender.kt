@@ -32,7 +32,13 @@ class VideoSender(
     private val nativeWidth: Int = width,
     private val nativeHeight: Int = height,
     private val log: (String) -> Unit,
-    /** 推流自然结束（对端断开等）时回调——CarPlay 会话真实结束的信号。 */
+    /**
+     * 推流自然结束（对端断开等）时回调——CarPlay 会话真实结束的信号。
+     *
+     * 回调发生在编码器与输入画面 Surface **仍有效**时（本类先回调、后调用 [stop] 释放）：
+     * 上层可在回调里先释放内容源（CarLife 解码器），再停本 sender，避免解码线程渲染到
+     * 已释放的 Surface。只在本会话第一次自然结束时触发；外部主动 [stop] 不触发。
+     */
     private val onEnded: (() -> Unit)? = null,
     /** 每秒发送屏幕流保活，按 /info 决定使用 opcode=5 统计体或 opcode=2 空帧 */
     private val keepAliveWithStats: Boolean = false,
@@ -52,6 +58,16 @@ class VideoSender(
     private var inputSurface: Surface? = null
     private val running = AtomicBoolean(false)
     private val stopped = AtomicBoolean(false)
+
+    /** [start]/[stop] 的资源安装与释放互斥：stop 落在 start 建编码器窗口里时不能漏释放。 */
+    private val lifecycleLock = Any()
+
+    /** start() 是否正在执行：并发 start 直接拒绝，避免两轮启动互相覆盖 encoder/socket。 */
+    private var starting = false
+
+    /** 本会话「推流自然结束」回调是否已触发：每次成功 start 只允许触发一次 onEnded。 */
+    private val endedNotified = AtomicBoolean(false)
+
     private var frameCounter = 0L
     private var configSent = false
 
@@ -101,11 +117,22 @@ class VideoSender(
 
     /** 启动编码和推流，通过 [onSurfaceReady] 提供编码器输入 Surface */
     fun start(onSurfaceReady: (Surface, VideoProfile) -> Unit): Boolean {
-        if (running.get()) return true
-        stopped.set(false)
-        return try {
+        synchronized(lifecycleLock) {
+            if (running.get()) return true
+            if (starting) {
+                log("VIDEO: 启动流程已在进行中，忽略重复 start")
+                return false
+            }
+            starting = true
+            stopped.set(false)
+            endedNotified.set(false)
+        }
+        var createdCodec: MediaCodec? = null
+        var createdSurface: Surface? = null
+        var selected: VideoProfile? = null
+        try {
             if (!openDataPort()) {
-                stop()
+                log("VIDEO: 数据端口未连通，放弃本轮启动")
                 return false
             }
             configurationExhausted = true
@@ -128,7 +155,6 @@ class VideoSender(
                     ) { w, h -> capability.isSizeSupported(w, h) }
                     .map { (w, h) -> VideoProfile(w, h, targetFps, VideoProfile.bitrate(w, h, targetFps, bitrateMbps)) }
             configurationExhausted = true
-            var selected: VideoProfile? = null
             for ((index, candidate) in candidates.withIndex()) {
                 var codec: MediaCodec? = null
                 var surface: Surface? = null
@@ -158,8 +184,8 @@ class VideoSender(
                     created.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
                     surface = created.createInputSurface()
                     created.start()
-                    encoder = created
-                    inputSurface = surface
+                    createdCodec = created
+                    createdSurface = surface
                     selected = profile
                     break
                 } catch (error: Exception) {
@@ -170,41 +196,105 @@ class VideoSender(
                 }
             }
             val profile = checkNotNull(selected) { "请求配置与原生回退配置均不可用" }
-            configurationExhausted = false
-            width = profile.width
-            height = profile.height
-            activeProfile = profile
-            log("VIDEO: 启动编码器 " + width + "x" + height + "@" + profile.fps + "fps bitrate=" + profile.bitrate / 1000 + "kbps")
-            running.set(true)
-            lastKeepAliveAt = android.os.SystemClock.uptimeMillis()
-            onSurfaceReady(checkNotNull(inputSurface), profile)
-
-            Thread({ drainEncoder() }, "video-drain").apply {
-                isDaemon = true
-                start()
+            val readySurface = checkNotNull(createdSurface) { "编码器输入 Surface 未创建" }
+            // 安装阶段与 stop() 串行：若 stop 已消费停止信号（stopped=true），这里释放刚创建的资源并放弃，
+            // 避免「stop 先跑、start 后安装 encoder/inputSurface」导致资源无人释放。
+            synchronized(lifecycleLock) {
+                if (stopped.get()) {
+                    log("VIDEO: 启动期间收到停止请求，释放刚创建的编码器与输入 Surface")
+                    configurationExhausted = false
+                    releaseResourcesLocked()
+                    releaseOrphan(createdCodec, createdSurface)
+                    createdCodec = null
+                    createdSurface = null
+                    return false
+                }
+                encoder = createdCodec
+                inputSurface = createdSurface
+                width = profile.width
+                height = profile.height
+                activeProfile = profile
+                configurationExhausted = false
+                lastKeepAliveAt = android.os.SystemClock.uptimeMillis()
+                running.set(true)
             }
-            true
+            createdCodec = null
+            createdSurface = null
+            log("VIDEO: 启动编码器 " + width + "x" + height + "@" + profile.fps + "fps bitrate=" + profile.bitrate / 1000 + "kbps")
+            // onSurfaceReady 与起 drain 线程都在 lifecycleLock 之外：避免与 SessionController 的
+            // 会话锁交叉死锁（retireSession 持会话锁调用本类 stop()）。
+            if (stopped.get()) {
+                stop()
+                return false
+            }
+            onSurfaceReady(readySurface, profile)
+            synchronized(lifecycleLock) {
+                if (stopped.get()) {
+                    stop()
+                    return false
+                }
+                Thread({ drainEncoder() }, "video-drain").apply {
+                    isDaemon = true
+                    start()
+                }
+            }
+            return true
         } catch (error: Exception) {
             log("VIDEO: 启动失败 - ${error.message}")
+            releaseOrphan(createdCodec, createdSurface)
             stop()
-            false
+            return false
+        } finally {
+            synchronized(lifecycleLock) { starting = false }
         }
     }
 
     /**
-     * 关闭网络以解除发送等待，并幂等释放编码器和输入画面资源
+     * 关闭网络以解除发送等待，并幂等释放编码器和输入画面资源。
+     *
+     * 与 [start] 通过 [lifecycleLock] 串行：若 stop() 落在 start() 创建编码器期间，
+     * start() 会在安装资源前看到 stopped 标记并自行释放，不会泄漏编码器/输入 Surface。
+     * 外部主动停止不触发 [onEnded]（会话结束信号只由 drain 线程的自然结束路径发出）。
      */
     fun stop() {
-        if (!stopped.compareAndSet(false, true)) return
+        stopped.set(true)
+        running.set(false)
+        synchronized(lifecycleLock) {
+            releaseResourcesLocked()
+        }
+    }
+
+    /** 调用方需持 [lifecycleLock]；幂等释放 socket、编码器与输入 Surface。 */
+    private fun releaseResourcesLocked() {
         running.set(false)
         // 先关闭网络以解除取帧线程的写等待，再释放编码器资源
         runCatching { socket?.close() }
         socket = null
-        runCatching { encoder?.stop() }
-        runCatching { encoder?.release() }
+        val codec = encoder
         encoder = null
-        runCatching { inputSurface?.release() }
+        if (codec != null) {
+            runCatching { codec.stop() }
+            runCatching { codec.release() }
+        }
+        val surface = inputSurface
         inputSurface = null
+        if (surface != null) {
+            runCatching { surface.release() }
+        }
+    }
+
+    /** 释放尚未安装到字段上的编码器/输入 Surface（start() 中止或异常路径）。 */
+    private fun releaseOrphan(
+        codec: MediaCodec?,
+        surface: Surface?,
+    ) {
+        if (codec != null) {
+            runCatching { codec.stop() }
+            runCatching { codec.release() }
+        }
+        if (surface != null) {
+            runCatching { surface.release() }
+        }
     }
 
     /** 收到车机 forceKeyFrame 后立即请求关键帧 */
@@ -268,9 +358,13 @@ class VideoSender(
             if (running.get()) log("VIDEO: 推流中止 - ${error.message}（等待接收端恢复后重连）")
         } finally {
             val unexpected = running.getAndSet(false)
+            // 会话真实结束：先回调、再释放编码器/输入 Surface。此时 Surface 仍有效，
+            // SessionController 会在回调里先 release 内容源（CarLife 解码器）再 stop 本 sender，
+            // 因此不会出现「解码线程还在渲染、Surface 已被释放」的竞态。
+            if (unexpected && endedNotified.compareAndSet(false, true)) {
+                runCatching { onEnded?.invoke() }
+            }
             stop()
-            // 会话真实结束信号（静默降噪解除 / 状态收尾）
-            if (unexpected) runCatching { onEnded?.invoke() }
         }
     }
 
