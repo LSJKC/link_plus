@@ -87,6 +87,13 @@ android {
         buildConfig = true
     }
 
+    testOptions {
+        // 本地 JVM 单测里的 android.jar 是 stub：CarLifeHuClient 等类会调用
+        // android.os.SystemClock.uptimeMillis()，不开这个开关会抛
+        // "Method ... not mocked"，假引擎集成测试（FakeCarLifeEngineTest）无法运行。
+        unitTests.isReturnDefaultValues = true
+    }
+
     packaging {
         // 排除密码库中重复的 JVM OSGi 描述
         resources.excludes += "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
