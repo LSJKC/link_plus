@@ -566,10 +566,32 @@ object SessionController {
 
     @Volatile private var lastSessionEnd = "尚无结束记录"
 
+    /**
+     * 内容源诊断摘要（会话日志/诊断导出共用）：CarLife 源带引擎连接、解码帧数、
+     * 码流真实尺寸与最近错误，便于现场判断黑屏卡在哪一层。
+     */
+    private fun sourceDiagnostics(): String {
+        val source = currentScreenSource ?: return "无"
+        return if (source is CarLifeScreenSource) {
+            buildString {
+                append(source.name)
+                append("(引擎=")
+                append(if (source.isEngineConnected) "已连接" else "未连接")
+                append(" 解码帧=").append(source.deliveredFrames)
+                append(" 码流=")
+                append(if (source.streamWidth > 0 && source.streamHeight > 0) "${source.streamWidth}x${source.streamHeight}" else "未知")
+                source.lastErrorText.takeIf { it.isNotEmpty() }?.let { append(" 错误=").append(it) }
+                append(")")
+            }
+        } else {
+            source.name
+        }
+    }
+
     /** 导出带采样时间和会话 ID 的状态快照 */
     fun diagnosticSnapshot(): String =
         "采样经过时间=${android.os.SystemClock.elapsedRealtime()}ms ${sessionStarting.diagnostics()} " +
-            "会话=${System.identityHashCode(currentClient)} 内容源=${currentScreenSource?.name ?: "无"} " +
+            "会话=${System.identityHashCode(currentClient)} 内容源=${sourceDiagnostics()} " +
             "地图=${VirtualLauncher.mapDiagnostics()} 音频=${audioStatus()} 上次结束=$lastSessionEnd"
 
     /** 会话已建立且投影就绪、但音频尚未启动时，动态补启（投影授权晚于连接的场景）。 */
@@ -1968,7 +1990,8 @@ object SessionController {
                                                         appendLog(
                                                             "SESSION-END: 会话=${System.identityHashCode(client)} " +
                                                                 "视频=${videoSender?.activeProfile} 已发送=${videoSender?.framesSentTotal} " +
-                                                                "音频=${audioSender?.status()}，发送失败与控制通道结束须按时间顺序关联",
+                                                                "内容源=${sourceDiagnostics()} 音频=${audioSender?.status()}，" +
+                                                                "发送失败与控制通道结束须按时间顺序关联",
                                                         )
                                                         appendLog(">>> CarPlay 会话结束（推流终止）——退役本轮连接，恢复蓝牙探测")
                                                         attributeAudioTeardown()

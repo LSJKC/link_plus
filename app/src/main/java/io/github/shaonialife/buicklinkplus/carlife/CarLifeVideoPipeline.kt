@@ -6,7 +6,7 @@ package io.github.shaonialife.buicklinkplus.carlife
 /**
  * CarLife H.264 视频管线（P1A 直出，纯 Kotlin、无 Android 依赖，可在 JVM 单测）。
  *
- * 引擎把 H.264 按帧（Annex-B，含起始码）推给车机端，本类在投喂解码器前做三件事：
+ * 引擎把 H.264 按帧（Annex-B，含起始码）推给车机端，本类在投喂解码器前做四件事：
  *
  * 1. **NAL 切分与 CSD 缓存**：按 `00 00 01` / `00 00 00 01` 起始码切分 NAL，缓存最近一次
  *    SPS（type 7）与 PPS（type 8）的完整字节（含起始码），供后续裸关键帧复用。
@@ -16,6 +16,8 @@ package io.github.shaonialife.buicklinkplus.carlife
  * 3. **码流真实尺寸**：只在**帧内带 SPS** 时调用 [H264Sps.parseAnnexB] 解析宽高，做合理性
  *    校验（尺寸范围 + 宽高比），仅在变化时回调 [Listener.onStreamSize]。98311 申请值/65544
  *    回显值都可能与实际编码尺寸不一致，SPS 才是码流自带的真相。
+ * 4. **最近关键帧缓存**：把*已补 CSD* 的关键帧留一份副本（上限 4MB），供解码器晚建/重建时
+ *    立即投喂，不必空等引擎下一个 IDR——[lastKeyFrame] 返回防御性副本，[reset] 一并清除。
  *
  * 线程模型：[feed] 由 CarLife 视频读线程逐帧调用；[reset] 可由生命周期线程在重连时调用。
  * 内部只在缓存读写时短暂持锁，回调一律在锁外触发且不做 I/O——**绝不阻塞视频读线程**。
@@ -60,6 +62,14 @@ class CarLifeVideoPipeline(
     /** SPS + PPS 的合并前缀，供裸 IDR 前置；任一缺失则为 null。 */
     private var mergedCsd: ByteArray? = null
 
+    /**
+     * 最近一次**已补 CSD** 的关键帧副本（Annex-B，含起始码）。
+     *
+     * 解码器晚建/重建（SPS 尺寸变化、解码线程退出）时直接投喂，立刻出画面，不必等引擎
+     * 下一个 IDR。上限 [MAX_CACHED_KEYFRAME_BYTES]：异常大帧静默跳过，不占内存也不刷日志。
+     */
+    private var latestKeyFrame: ByteArray? = null
+
     /** SPS 解析出的码流真实尺寸（0 = 尚未解析到）。 */
     private var streamWidth = 0
     private var streamHeight = 0
@@ -89,10 +99,19 @@ class CarLifeVideoPipeline(
     fun pps(): ByteArray? = synchronized(lock) { ppsNal?.copyOf() }
 
     /**
+     * 最近一次关键帧（Annex-B，含起始码；裸 IDR 已前置缓存的 CSD）的防御性副本；没有则 null。
+     *
+     * 解码器（重新）创建成功后可以直接把这一帧投喂进去，立刻出画面，不必等引擎下一个 IDR。
+     * 返回新数组，调用方随意改写不会污染缓存。
+     */
+    fun lastKeyFrame(): ByteArray? = synchronized(lock) { latestKeyFrame?.copyOf() }
+
+    /**
      * 投喂一帧 CarLife H.264（Annex-B，含起始码，可带 SPS/PPS）。
      *
-     * 处理顺序：NAL 切分/缓存 CSD → 裸 IDR 前置 CSD → 解析并回调尺寸（仅变化时）→
-     * 转发帧。回调在锁外触发，因此监听器可以安全地回调本类（如读取 [hasCsd]/[streamSize]）。
+     * 处理顺序：NAL 切分/缓存 CSD → 裸 IDR 前置 CSD → 缓存最近关键帧 → 解析并回调尺寸
+     * （仅变化时）→ 转发帧。回调在锁外触发，因此监听器可以安全地回调本类（如读取
+     * [hasCsd]/[streamSize]/[lastKeyFrame]）。
      */
     fun feed(
         data: ByteArray,
@@ -139,18 +158,23 @@ class CarLifeVideoPipeline(
                     frameLength = merged.size
                 }
             }
+            // 缓存「已补 CSD」的关键帧：解码器晚建/重建时可直接投喂，不必空等下一个 IDR。
+            if (keyFrame && scan.hasIdr && frameLength <= MAX_CACHED_KEYFRAME_BYTES) {
+                latestKeyFrame = frameData.copyOfRange(frameOffset, frameOffset + frameLength)
+            }
         }
 
         sizeEvent?.let { listener.onStreamSize(it.first, it.second) }
         listener.onFrame(frameData, frameOffset, frameLength, ptsMs, keyFrame)
     }
 
-    /** 重连/重置：清空 CSD 缓存与已上报尺寸，下一次带 SPS 的关键帧重新上报。 */
+    /** 重连/重置：清空 CSD 缓存、最近关键帧与已上报尺寸，下一次带 SPS 的关键帧重新上报。 */
     fun reset() {
         synchronized(lock) {
             spsNal = null
             ppsNal = null
             mergedCsd = null
+            latestKeyFrame = null
             streamWidth = 0
             streamHeight = 0
         }
@@ -263,6 +287,9 @@ class CarLifeVideoPipeline(
         private const val MAX_DIMENSION = 8192
         private const val MIN_ASPECT = 0.3f
         private const val MAX_ASPECT = 3.5f
+
+        /** 关键帧缓存上限：1080p 高码率 I 帧实测 < 400KB，4MB 只为兜异常大帧，超出静默跳过。 */
+        private const val MAX_CACHED_KEYFRAME_BYTES = 4 * 1024 * 1024
 
         private fun contentEquals(
             left: ByteArray?,

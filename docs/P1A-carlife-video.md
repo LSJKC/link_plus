@@ -198,16 +198,17 @@ pwsh -NoProfile -File scripts\verify-carlife-log.ps1 -SelfTest
 | 检查项 | 命令 | 结果 |
 | --- | --- | --- |
 | 代码格式 | `.\gradlew.bat spotlessCheck` | BUILD SUCCESSFUL（ktlint 1.3.1，全部 Kotlin） |
-| 单元测试 | `.\gradlew.bat :app:testBuickUnitTest` | 121 个测试类 / 619 个用例，0 failure / 0 error / 0 skipped；其中 CarLife 相关 34 项全通过 |
+| 单元测试 | `.\gradlew.bat :app:testBuickUnitTest` | **122 个测试类 / 632 个用例**，0 failure / 0 error / 0 skipped；其中 CarLife 相关 40 项全通过 |
 | 构建 | `.\gradlew.bat :app:assembleBuick` | BUILD SUCCESSFUL（含 lintVital） |
 | Lint | `.\gradlew.bat :app:lintBuick :app:lintDebug` | BUILD SUCCESSFUL（warningsAsErrors 全绿） |
 | 产物 | `app/build/outputs/apk/buick/app-buick.apk` | 26,894,933 B（版本 0.1.0/153；debug/buick 签名，重新构建时 hash 会变化，以当次构建输出为准） |
 | 实车/真机 | — | **PENDING**：`adb devices` 无设备，安装/连接/画面/音频/触摸验收待接手机+车机后执行 |
 
 CarLife 相关单测明细：`CarLifeProtocolTouchTest` 4、`CarLifeCarGpsTest` 6、`InitOrderTest` 3、
-`ConnectTypeProbeTest` 3、`H264SpsTest` 8、`CarLifeVideoPipelineTest` 9、`FakeCarLifeEngineTest` 1。
+`ConnectTypeProbeTest` 3、`H264SpsTest` 8、`CarLifeVideoPipelineTest` 15、`FakeCarLifeEngineTest` 1；
+另有 `DeviceIdentityTest` 7（蓝牙 MAC 手填格式/占位值回归）。
 
-`FakeCarLifeEngineTest`（本轮新增，JVM 无设备集成测试）证据：假 CarLife 引擎在 127.0.0.1 监听
+`FakeCarLifeEngineTest`（JVM 无设备集成测试）证据：假 CarLife 引擎在 127.0.0.1 监听
 7240/8240/9340/9240/9241/9242/9440，与生产 `CarLifeHuClient` 走真实 socket；命令序列
 `98305 → 98343 → 98307 → 98344 → 98386 → 98311 → 98313`，98311 申请 `1280x720@20`、65544 原样确认；
 8240 收到 IDR（`keyFrame=true, pts=1234567`）与 P 帧（`keyFrame=false, pts=1234607`）两帧，
@@ -215,7 +216,39 @@ SPS 解析 `onStreamSize(1280,720)`、帧负载与假引擎写入逐字节一致
 覆盖「引擎连接 + 码流接收」到 `CarLifeVideoDecoder` 之前的下层路径；MediaCodec/Surface 解码与车机侧
 AirPlay 链路仍需真机验收。
 
-## 8. 风险与回滚
+### 本轮诊断加固（2026-11-06 追加）
+
+为让无设备/现场的日志可判读并降低误判成本：
+
+1. **端口失败静默**：`CarLifeHuClient(quietPortFailures = true)` 时不再每次重试打 7 条端口连接失败；
+   仅保留 `控制端口未连通` 摘要。
+2. **等待提示节流**：`CARLIFE: 等待 CarLife+ 无线连接（127.0.0.1:7240）第 N 次重试…`
+   首次立即、之后最多 1 条/10s。
+3. **无帧看门狗**：已握手但 ≥5s 无视频帧时打
+   `CARLIFE: 已握手但 Ns 无视频帧（…CSD=已就绪|缺失，码流=WxH|未知）`（≤1 条/5s）。
+4. **解码器关键帧种子**：`CarLifeVideoPipeline.lastKeyFrame()` 缓存最近一个已补 CSD 的关键帧
+   （≤4MB），重建解码器时立即灌入一帧，缩短重建/分辨率变化后的黑屏窗口。
+5. **会话诊断**：`SessionController.diagnosticSnapshot()` 与 `SESSION-END` 行新增内容源详情
+   （引擎连接、解码帧数、码流尺寸、最近错误）。
+
+## 8. 现场排障速查
+
+现场验收时按日志定位；所有 `CarPlaySender` 标签日志可用 `scripts/p1a-field-check.ps1` 抓取并用
+`scripts/verify-carlife-log.ps1` 自动判定。
+
+| 现象 | 可能原因 | 排查 / 处理 |
+| --- | --- | --- |
+| 车机黑屏，日志一直没有 `CARLIFE: carlife connected` | CarLife+ 未打开或没进「无线连接」，127.0.0.1:7240 未监听 | 手机打开 CarLife+ → 点「无线连接」；应用会每 10s 打一次 `CARLIFE: 等待 CarLife+ 无线连接…`，打开后数秒内自动连上 |
+| 有 `carlife connected`，但 >5s 没有 `CARLIFE-VIDEO: 码流真实尺寸` / `decoder out` | 引擎握上手但没推流（98313 未生效 / 编码器未初始化 / 申请分辨率被拒） | 看 `CARLIFE: 已握手但 Ns 无视频帧（…CSD=…，码流=…）`、`协商编码参数`、`客户端 SPS 实测`；重开 CarLife+ 的「无线连接」；核对 65544 确认尺寸 |
+| 有 `decoder out`，但没有 `VIDEO: 帧` 或车机仍黑 | 编码器/AirPlay 段问题；解码器输出 Surface 与编码器 profile 尺寸不一致导致编码器无输出 | 查 `CARLIFE-VIDEO: fit stream=… encoder=…` 与 `VIDEO: 编码器取帧异常`；P1B 合成器（contain/GL）解决 |
+| 画面被拉伸/变形 | 码流 SPS 尺寸 ≠ 编码器 profile（车机分辨率常非 16:9） | 同上；`fit` 行的 scale 值即拉伸倍率；P1A 接受，P1B 修正 |
+| 车机不邀请 / 连不上车机 | 本机蓝牙 MAC 是占位值（Honor/MagicOS 等脱敏机型） | 手机「设置 → 连接与设备 → 本机蓝牙地址（可选手填）」填入真实地址；日志看 `MAC:` 与 ctrl 广播 `id=` |
+| 断开后重连不恢复 | CarLife 引擎被系统杀掉/退出无线连接态 | 重新打开 CarLife+ 无线连接；应用每 2s 自动重试（日志 `2s 后重试`） |
+| 日志被端口连接失败刷屏 | 旧实现每次重试打 7 条端口失败 | 本版本对端口失败静默、只打 10s 节流的等待行 + 5s 无帧看门狗 |
+
+> 说明：CarLife 握手/建流需要数秒，期间车机端编码器可能还没有首帧；现场请**先打开 CarLife+ 无线连接，再连接车机**。
+
+## 9. 风险与回滚
 
 | 风险 | 处理 |
 | --- | --- |
@@ -223,16 +256,18 @@ AirPlay 链路仍需真机验收。
 | CarLife 引擎白名单降档（申请尺寸 ≠ SPS 尺寸） | 以 SPS 为准配置解码器；触摸（P3）也按 SPS 坐标系映射 |
 | 引擎未启动/未进入无线连接 | `CarLifeScreenSource` 每 2s 重试并打日志；界面由后续阶段补提示 |
 | 直接解码→编码 Surface 在部分 ROM 不支持 | 回退方案：解码到 SurfaceTexture + GL 合成到编码器 Surface（P1B 实现） |
+| 首帧延迟：CarLife 握手/建流需数秒，期间编码器无输出，个别车机可能等流超时 | 现场先开 CarLife+ 再连车机；P1A 后续优化：连接前 prewarm CarLife 客户端 + GOP/关键帧缓存，attach 后立即灌帧（与旧工程 CarLifeBridge.prewarm 同思路） |
+| CarLife 没起来时车机长时间黑屏且无提示 | 日志已加 10s 等待提示 + 5s 无帧看门狗；后续阶段可加手机端状态卡 |
 | 本阶段无回滚开关 | 画面唯一来源即 CarLife；旧「隐形屏」路径已按用户要求随内置 ADB 一并移除，无法回退到 shell 桌面 |
 
-## 9. 后续阶段
+## 10. 后续阶段
 
 - **P1B**：`CarLifeComposer`（EGL + OES 纹理 + 壁纸 + contain + 圆角），解决尺寸不一致/拉伸。
 - **P2**：CarLife 9240/9241 PCM → `AudioSender.feedExternalPcm`（48k stereo / 1408B / TTS ring）。
 - **P3**：车机触摸 → `CarLifeTouchSink` → CarLife 9340；按 P1B pane 映射坐标。
 - **P4**：0x10030 → iAP2 0x5201/0x5202 导航上行；设置/日志导出。
 
-## 10. 许可
+## 11. 许可
 
 CarLife 协议/客户端/视频处理移植自 [CarPToCarL](https://github.com/jjuugk/CarPToCarL)（MIT，Copyright (c) 2026 lizhihua），
 归属与修改说明见 [third-party/CarPToCarL-NOTICE.md](third-party/CarPToCarL-NOTICE.md)。

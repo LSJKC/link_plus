@@ -7,9 +7,11 @@ import android.content.Context
 import android.os.SystemClock
 import android.view.Surface
 import io.github.shaonialife.buicklinkplus.carlife.CarLifeHuClient
+import io.github.shaonialife.buicklinkplus.carlife.CarLifeProtocol
 import io.github.shaonialife.buicklinkplus.carlife.CarLifeVideoDecoder
 import io.github.shaonialife.buicklinkplus.carlife.CarLifeVideoPipeline
 import io.github.shaonialife.buicklinkplus.render.DisplayGeometry
+import io.github.shaonialife.buicklinkplus.util.LogThrottle
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
@@ -38,6 +40,8 @@ import java.util.concurrent.atomic.AtomicReference
  *
  * 诊断：对外暴露 [isEngineConnected]/[deliveredFrames]/[streamWidth]/[streamHeight]/
  * [lastErrorText]，供会话日志采样；关键日志含 `carlife connected` / `decoder out` / `fit`。
+ * 等待连接的重试日志限流（首次即时、之后最多每 10s 一行）；已握手但 ≥5s 无视频帧时输出
+ * 一行带 CSD/码流尺寸的看门狗日志，方便现场区分「手机没进无线连接」与「有码流但解不出」。
  */
 class CarLifeScreenSource(
     private val context: Context,
@@ -174,6 +178,9 @@ class CarLifeScreenSource(
     private fun manage(session: Session) {
         val pipeline = session.pipeline ?: return
         logForSession(session, "CARLIFE: 管理线程启动（等待 CarLife+ 打开无线连接）")
+        // 连接失败重试的原样日志会被「7 端口 × 每 2s」刷屏，这里限流：首次立即一行，之后最多每 10s 一行。
+        val waitLog = LogThrottle(RETRY_LOG_INTERVAL_MS)
+        var retryCount = 0L
         while (session.active && isCurrent(session)) {
             val client =
                 CarLifeHuClient(
@@ -194,6 +201,9 @@ class CarLifeScreenSource(
                     needAdapterScreen = true,
                     orderedInit = true,
                     settleReinit = true,
+                    // 重试循环每 2s 建一次客户端：逐端口失败日志（每次 7 行）留给客户端调试，
+                    // 现场只需要下面「等待 CarLife+ 无线连接」的限流行。
+                    quietPortFailures = true,
                 )
             session.client = client
             val started =
@@ -210,16 +220,42 @@ class CarLifeScreenSource(
             if (!started) {
                 session.client = null
                 client.stop()
+                retryCount++
                 setLastError(session, "CarLife 引擎未就绪（127.0.0.1 控制端口未连通）")
-                logForSession(session, "CARLIFE: carlife 连接失败，2s 后重试（请确认手机 CarLife+ 已进入「无线连接」）")
+                // 首次立即打一行，之后最多每 10s 一行：现场能看出「还在等」但不会被每 2s 的
+                // 7 端口失败日志刷屏（逐端口日志已由 quietPortFailures 关掉）。
+                if (waitLog.allow("wait")) {
+                    logForSession(
+                        session,
+                        "CARLIFE: 等待 CarLife+ 无线连接（127.0.0.1:${CarLifeProtocol.PORT_CMD}）" +
+                            "第 $retryCount 次重试（打开 CarLife+ 并点「无线连接」）",
+                    )
+                }
                 sleepWhileActive(session, RETRY_DELAY_MS)
                 continue
             }
             setLastError(session, "")
             setEngineConnected(session, true)
+            session.lastFrameAt = SystemClock.uptimeMillis()
             logForSession(session, "CARLIFE: carlife connected 127.0.0.1（握手成功，等待视频帧）")
+            var lastNoVideoWarnAt = 0L
             while (session.active && isCurrent(session) && client.isRunning) {
                 sleepWhileActive(session, STATUS_POLL_MS)
+                if (!session.active || !isCurrent(session) || !client.isRunning) break
+                // 已握手但长时间没有视频帧：诊断行带上管线状态（CSD 是否就绪、SPS 码流尺寸），
+                // 现场一眼看出是「没进无线连接/手机没内容」还是「有码流但 SPS 没解析到」。
+                val now = SystemClock.uptimeMillis()
+                val idle = now - session.lastFrameAt
+                if (idle < NO_VIDEO_WARN_MS) continue
+                if (lastNoVideoWarnAt != 0L && now - lastNoVideoWarnAt < NO_VIDEO_WARN_INTERVAL_MS) continue
+                lastNoVideoWarnAt = now
+                val csdText = if (session.pipeline?.hasCsd == true) "已就绪" else "缺失"
+                val streamText = session.pipeline?.streamSize?.let { "${it.first}x${it.second}" } ?: "未知"
+                logForSession(
+                    session,
+                    "CARLIFE: 已握手但 ${idle / 1000}s 无视频帧" +
+                        "（检查 CarLife+ 是否进入无线连接/是否有内容；CSD=$csdText，码流=$streamText）",
+                )
             }
             setEngineConnected(session, false)
             if (session.active && isCurrent(session)) {
@@ -248,6 +284,8 @@ class CarLifeScreenSource(
         keyFrame: Boolean,
     ) {
         if (!isCurrent(session)) return
+        // 无视频帧看门狗用：任意一帧（解码前也算）都证明码流还活着。
+        session.lastFrameAt = SystemClock.uptimeMillis()
         val decoder = session.decoder.get()
         if (decoder != null) {
             // 解码器已就绪：不再需要为「晚建解码器」保留关键帧。
@@ -384,11 +422,11 @@ class CarLifeScreenSource(
             if (session.decoder.compareAndSet(decoder, null)) decoder.stopAndWait(DECODER_STOP_TIMEOUT_MS)
             return
         }
-        // 建解码器期间暂存的关键帧（通常就是首帧 SPS+PPS+IDR）：立刻投喂，省掉等下一个 IDR 的空窗。
-        session.pendingKeyFrame?.let {
-            session.pendingKeyFrame = null
-            decoder.queueFrame(it.data, 0, it.data.size, it.ptsMs, true)
-        }
+        // 先投喂建解码器期间暂存的关键帧（通常就是首帧 SPS+PPS+IDR）；没有暂存帧时用管线缓存的
+        // 最新关键帧兜底——解码器（重建）起来后立即出画面，不必空等引擎下一个 IDR。
+        val seed = session.pendingKeyFrame ?: pipeline.lastKeyFrame()?.let { PendingKeyFrame(it, 0L) }
+        session.pendingKeyFrame = null
+        seed?.let { decoder.queueFrame(it.data, 0, it.data.size, it.ptsMs, true) }
         logForSession(
             session,
             "CARLIFE-VIDEO: 解码器已启动 stream=${size.first}x${size.second} " +
@@ -559,6 +597,10 @@ class CarLifeScreenSource(
         @Volatile
         var pendingKeyFrame: PendingKeyFrame? = null
 
+        /** 最近一次收到视频帧的时刻（uptimeMillis；握手成功时也会重置）。无视频帧看门狗用。 */
+        @Volatile
+        var lastFrameAt = 0L
+
         /** 解码器生命周期单线程：MediaCodec 创建/配置/stop 都不在视频读线程上做。 */
         val executor: ExecutorService =
             Executors.newSingleThreadExecutor { runnable ->
@@ -587,7 +629,18 @@ class CarLifeScreenSource(
         private const val HOST = "127.0.0.1"
         private const val MANAGER_THREAD_NAME = "carlife-source"
         private const val RETRY_DELAY_MS = 2_000L
+
+        /** 连接失败重试日志限流窗口：首次立即打，之后最多每 10s 一行。 */
+        private const val RETRY_LOG_INTERVAL_MS = 10_000L
+
         private const val STATUS_POLL_MS = 500L
+
+        /** 已握手但连续多久没有视频帧就开始告警（毫秒）。 */
+        private const val NO_VIDEO_WARN_MS = 5_000L
+
+        /** 同一会话里无视频帧告警的最小重复间隔（毫秒）。 */
+        private const val NO_VIDEO_WARN_INTERVAL_MS = 5_000L
+
         private const val DECODER_STOP_TIMEOUT_MS = 800L
         private const val CREATE_RETRY_DELAY_MS = 2_000L
         private const val MANAGER_JOIN_TIMEOUT_MS = 1_500L

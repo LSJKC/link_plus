@@ -3,6 +3,7 @@ package io.github.shaonialife.buicklinkplus.carlife
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -11,7 +12,7 @@ import org.junit.Test
  * CarLifeVideoPipeline 纯 JVM 测试：不触碰 android.*，用 [SyntheticH264] 构造 Annex-B 码流。
  *
  * 覆盖：普通帧透传、SPS/PPS 缓存、裸 IDR 前置 CSD、非关键帧不改写、尺寸变化只在变化时回调、
- * reset 清理、offset 语义与非法区间忽略。
+ * reset 清理、offset 语义与非法区间忽略、最近关键帧缓存（供解码器晚建/重建立即投喂）。
  */
 class CarLifeVideoPipelineTest {
     @Test
@@ -170,6 +171,82 @@ class CarLifeVideoPipelineTest {
         pipeline.feed(ByteArray(4), 0, 0, 0L, true)
         assertTrue(listener.frames.isEmpty())
         assertTrue(listener.sizes.isEmpty())
+    }
+
+    // ---- 最近关键帧缓存（解码器晚建/重建时立即投喂，不必空等下一个 IDR）----
+
+    @Test
+    fun lastKeyFrameIsNullBeforeAnyKeyFrame() {
+        val pipeline = CarLifeVideoPipeline(RecordingListener())
+        assertNull(pipeline.lastKeyFrame())
+
+        val nonKey = SyntheticH264.nonKeyAnnexB()
+        pipeline.feed(nonKey, 0, nonKey.size, 1L, false)
+        assertNull(pipeline.lastKeyFrame())
+    }
+
+    @Test
+    fun lastKeyFrameReturnsKeyFrameWithItsOwnCsd() {
+        val pipeline = CarLifeVideoPipeline(RecordingListener())
+        val frame = SyntheticH264.csd(80, 45) + SyntheticH264.idrAnnexB()
+        pipeline.feed(frame, 0, frame.size, 1L, true)
+
+        val cached = pipeline.lastKeyFrame()
+        assertNotNull(cached)
+        assertArrayEquals(frame, cached)
+        // 防御性副本：调用方改写返回数组不能污染缓存内部状态。
+        cached!![0] = 0x7F.toByte()
+        assertArrayEquals(frame, pipeline.lastKeyFrame())
+    }
+
+    @Test
+    fun lastKeyFrameReturnsBareIdrWithPrependedCsd() {
+        val pipeline = CarLifeVideoPipeline(RecordingListener())
+        val csd = SyntheticH264.csd(80, 45)
+        val first = csd + SyntheticH264.idrAnnexB()
+        pipeline.feed(first, 0, first.size, 1L, true)
+
+        // 引擎后续周期 IDR 是裸片：缓存必须是「已补 CSD」的版本，晚建解码器才能直接配置。
+        val bareIdr = SyntheticH264.idrAnnexB(payloadSize = 64)
+        pipeline.feed(bareIdr, 0, bareIdr.size, 2L, true)
+
+        assertArrayEquals(csd + bareIdr, pipeline.lastKeyFrame())
+    }
+
+    @Test
+    fun nonKeyFrameDoesNotReplaceLastKeyFrame() {
+        val pipeline = CarLifeVideoPipeline(RecordingListener())
+        val frame = SyntheticH264.csd(80, 45) + SyntheticH264.idrAnnexB()
+        pipeline.feed(frame, 0, frame.size, 1L, true)
+        assertArrayEquals(frame, pipeline.lastKeyFrame())
+
+        val nonKey = SyntheticH264.nonKeyAnnexB()
+        pipeline.feed(nonKey, 0, nonKey.size, 2L, false)
+        assertArrayEquals(frame, pipeline.lastKeyFrame())
+    }
+
+    @Test
+    fun oversizedKeyFrameIsNotCached() {
+        val pipeline = CarLifeVideoPipeline(RecordingListener())
+        // 4MB 上限：超限关键帧静默跳过（不缓存，也不影响既有转发行为）。
+        val oversized = SyntheticH264.idrAnnexB(payloadSize = 4 * 1024 * 1024)
+        pipeline.feed(oversized, 0, oversized.size, 1L, true)
+        assertNull(pipeline.lastKeyFrame())
+
+        val normal = SyntheticH264.csd(80, 45) + SyntheticH264.idrAnnexB()
+        pipeline.feed(normal, 0, normal.size, 2L, true)
+        assertArrayEquals(normal, pipeline.lastKeyFrame())
+    }
+
+    @Test
+    fun resetClearsLastKeyFrame() {
+        val pipeline = CarLifeVideoPipeline(RecordingListener())
+        val frame = SyntheticH264.csd(80, 45) + SyntheticH264.idrAnnexB()
+        pipeline.feed(frame, 0, frame.size, 1L, true)
+        assertNotNull(pipeline.lastKeyFrame())
+
+        pipeline.reset()
+        assertNull(pipeline.lastKeyFrame())
     }
 
     /** 记录管线回调；帧内容按 offset/length 拷贝，同时保留原始 offset 供语义断言。 */

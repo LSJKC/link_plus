@@ -180,6 +180,13 @@ class CarLifeHuClient(
      * 让引擎在「已有编码器」的状态下重建一次。只做一次，避免把引擎打进反复重建。
      */
     private val settleReinit: Boolean = true,
+    /**
+     * 静默**逐端口连接失败**日志（默认 false = 保持原行为）。
+     *
+     * 上层重试循环每 2s 建一次客户端，7 个端口各打一行失败日志会把现场日志刷满；
+     * 打开后只保留「控制端口未连通」汇总行。只影响日志，返回值/握手/生命周期完全不变。
+     */
+    private val quietPortFailures: Boolean = false,
 ) {
     private val running = AtomicBoolean(false)
     private val sockets = ConcurrentHashMap<Int, Socket>()
@@ -460,7 +467,9 @@ class CarLifeHuClient(
                 socket.connect(InetSocketAddress(host, port), connectTimeoutMs)
                 sockets[port] = socket
             } catch (error: Exception) {
-                log("CARLIFE: 端口 $port 连接失败 - ${error.message}")
+                // quietPortFailures：上层每 2s 重试一次，7 行/次的失败日志会把现场日志刷满，
+                // 此时只留下面「控制端口未连通」的汇总行（行为不受影响）。
+                if (!quietPortFailures) log("CARLIFE: 端口 $port 连接失败 - ${error.message}")
                 runCatching { socket.close() }
             }
         }
