@@ -22,14 +22,12 @@ import io.github.shaonialife.buicklinkplus.R
 import io.github.shaonialife.buicklinkplus.media.MediaListenerService
 import io.github.shaonialife.buicklinkplus.service.CarPlayService
 import io.github.shaonialife.buicklinkplus.session.ConnectionPreflight
-import io.github.shaonialife.buicklinkplus.shizuku.ShellServiceGate
 
 /** 权限页展示当前状态，授权和设置跳转交给宿主 */
 class PhonePermissionsView(
     context: Context,
 ) : LinearLayout(context) {
     enum class Action {
-        CHECK_SERVICE,
         GUIDE,
         DEVICE_PERMISSIONS,
         BLUETOOTH,
@@ -59,7 +57,6 @@ class PhonePermissionsView(
     init {
         orientation = VERTICAL
         LayoutInflater.from(context).inflate(R.layout.view_phone_permissions, this, true)
-        findViewById<View>(R.id.permissionCheck).setOnClickListener { onAction?.invoke(Action.CHECK_SERVICE) }
         addRow(
             R.id.permissionGuideGroup,
             Action.GUIDE,
@@ -70,7 +67,7 @@ class PhonePermissionsView(
         addRow(
             R.id.permissionRequiredGroup,
             Action.DEVICE_PERMISSIONS,
-            R.drawable.ic_shizuku_shield,
+            R.drawable.ic_app_settings,
             R.string.phone_permissions_devices,
             if (Build.VERSION.SDK_INT >=
                 33
@@ -209,7 +206,6 @@ class PhonePermissionsView(
                 .associate { it.requirement to it.ready }
         val required =
             listOf(
-                ConnectionPreflight.Requirement.SHELL_SERVICE,
                 ConnectionPreflight.Requirement.BLUETOOTH_PERMISSION,
                 ConnectionPreflight.Requirement.BLUETOOTH_ENABLED,
                 ConnectionPreflight.Requirement.WIFI_PERMISSION,
@@ -222,21 +218,6 @@ class PhonePermissionsView(
                 required.count { checks[it] == true },
                 required.size,
             )
-        val (title, hint) =
-            when (ShellServiceGate.state(context)) {
-                ShellServiceGate.State.READY -> R.string.phone_permissions_shizuku_ready to R.string.phone_permissions_service_ready
-                ShellServiceGate.State.NEEDS_PAIRING ->
-                    R.string.phone_permissions_shizuku_missing to
-                        R.string.phone_permissions_service_missing
-                ShellServiceGate.State.STOPPED -> R.string.phone_permissions_shizuku_stopped to R.string.phone_permissions_service_stopped
-                ShellServiceGate.State.ACTIVATING ->
-                    R.string.phone_permissions_shizuku_unauthorized to
-                        R.string.phone_permissions_service_unauthorized
-                ShellServiceGate.State.INPUT_UNAVAILABLE ->
-                    R.string.phone_permissions_input_pending to R.string.phone_permissions_input_retry
-            }
-        findViewById<TextView>(R.id.permissionServiceTitle).setText(title)
-        findViewById<TextView>(R.id.permissionServiceHint).setText(hint)
         status(Action.GUIDE, R.string.phone_permissions_view)
         val deviceReady =
             checks[ConnectionPreflight.Requirement.BLUETOOTH_PERMISSION] == true &&

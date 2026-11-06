@@ -3,7 +3,7 @@ package io.github.shaonialife.buicklinkplus.audio
 import android.media.AudioRecord
 import android.os.Binder
 import android.os.ParcelFileDescriptor
-import io.github.shaonialife.buicklinkplus.shizuku.ICarInput
+import io.github.shaonialife.buicklinkplus.compat.ICarInput
 import java.io.Closeable
 
 /**

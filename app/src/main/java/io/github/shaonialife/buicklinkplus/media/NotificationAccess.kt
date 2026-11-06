@@ -2,24 +2,26 @@ package io.github.shaonialife.buicklinkplus.media
 
 import android.content.ComponentName
 import android.content.Context
-import io.github.shaonialife.buicklinkplus.shizuku.Shell
-import java.util.concurrent.atomic.AtomicBoolean
 
-/** 查询和补授通知使用权，内置服务就绪后可重复调用，已授权则跳过 */
+/**
+ * 查询并提示通知使用权（媒体会话枚举）。
+ *
+ * 内置 shell 服务已随无线 ADB 激活移除，应用不再能静默执行 `cmd notification allow_listener`，
+ * 因此这里只依据监听器自身回调的状态报告结果，并提示用户到系统设置手动授权；
+ * 不改动系统设置，也不执行任何 ADB/shell/root 操作。
+ */
 object NotificationAccess {
     /** 进程内上一次确认到的授权状态（服务 onListenerConnected 也会更新它）。 */
     @Volatile
     var granted: Boolean = false
         private set
 
-    private val granting = AtomicBoolean(false)
-
-    /** 服务连接回调里调用：系统已认可授权，无需再跑 shell 探测。 */
+    /** 服务连接回调里调用：系统已认可授权。 */
     internal fun markGranted() {
         granted = true
     }
 
-    /** 通知监听器的包/类组件名，供 allow_listener 使用 */
+    /** 通知监听器的包/类组件名，供系统设置页与诊断展示使用 */
     fun componentSpec(context: Context): String = ComponentName(context, MediaListenerService::class.java).flattenToString()
 
     /** 按冒号拆分授权列表后精确匹配组件，避免包名前缀误判 */
@@ -34,89 +36,24 @@ object NotificationAccess {
     /**
      * 在后台确保通知使用权已授予，支持重复调用
      *
+     * 内置授权通道已移除：只返回监听器连接状态，未连接时提示用户在系统设置手动授予。
+     *
      * @return 当前是否已授权
      */
     fun ensureGranted(
         context: Context,
         log: (String) -> Unit,
     ): Boolean {
-        val spec = componentSpec(context)
-        val current =
-            Shell
-                .exec("settings get secure enabled_notification_listeners", timeoutMs = 4_000)
-                .output
-        if (isGrantedIn(current, spec)) {
+        if (serviceConnected) {
             granted = true
-            // 有授权不代表系统已绑定监听器，绑定丢失时重新绑定一次
-            rebindIfNotConnected(context, spec, log)
             return true
         }
-        if (!granting.compareAndSet(false, true)) return granted
-        try {
-            val result = Shell.exec("cmd notification allow_listener $spec", timeoutMs = 4_000)
-            // 以短轮询读回的授权状态为准，命令退出码和立即读值都可能不准
-            var ok = false
-            for (attempt in 0 until 4) {
-                if (attempt > 0) Thread.sleep(250)
-                val after =
-                    Shell
-                        .exec("settings get secure enabled_notification_listeners", timeoutMs = 4_000)
-                        .output
-                if (isGrantedIn(after, spec)) {
-                    ok = true
-                    break
-                }
-            }
-            granted = ok
-            log(
-                if (ok) {
-                    "MEDIA: 通知使用权已授予（音乐卡可显示歌名/播放状态）"
-                } else {
-                    "MEDIA: 通知使用权未授予（cmd 结果=${result.exitCode}）——" +
-                        "音乐卡只显示播放状态、无歌名；可在系统设置「通知使用权」手动开启"
-                },
-            )
-            return ok
-        } finally {
-            granting.set(false)
-        }
-    }
-
-    /** 已授权但未连接时，通过 disallow 和 allow 重新绑定监听器 */
-    private fun rebindIfNotConnected(
-        context: Context,
-        spec: String,
-        log: (String) -> Unit,
-    ) {
-        // 服务已连上（onListenerConnected 置位）就无需探测，避免每次会话建立都跑 dumpsys。
-        if (serviceConnected) return
-        if (!rebinding.compareAndSet(false, true)) return
-        try {
-            val live = Shell.exec("dumpsys notification --noredact", timeoutMs = 6_000).output
-            if (isLiveIn(live, spec)) {
-                serviceConnected = true
-                return
-            }
-            log("MEDIA: 通知使用权在列表里但监听器未绑定——触发一次重绑")
-            Shell.exec("cmd notification disallow_listener $spec", timeoutMs = 4_000)
-            Thread.sleep(300)
-            Shell.exec("cmd notification allow_listener $spec", timeoutMs = 4_000)
-            // 绑定是异步的：短轮询确认，避免下游继续拿着「已授权但读不到」的状态
-            for (attempt in 0 until 6) {
-                Thread.sleep(400)
-                val after = Shell.exec("dumpsys notification --noredact", timeoutMs = 6_000).output
-                if (isLiveIn(after, spec)) {
-                    serviceConnected = true
-                    log("MEDIA: 监听器已重新绑定（音乐卡元数据恢复）")
-                    return
-                }
-            }
-            log("MEDIA: ⚠ 重绑后监听器仍未连上——音乐卡可能只显示播放状态")
-        } catch (_: Exception) {
-            // shell 受限/超时：不影响主流程，下次会话再试
-        } finally {
-            rebinding.set(false)
-        }
+        val spec = componentSpec(context)
+        log(
+            "MEDIA: 通知使用权需在系统设置「通知使用权」中手动授予 " +
+                "（$spec）；未授予时音乐卡只显示播放状态、无歌名",
+        )
+        return granted
     }
 
     /** 只在 dumpsys notification 的 Live listeners 段检查组件是否连接 */
@@ -141,6 +78,4 @@ object NotificationAccess {
     internal fun markDisconnected() {
         serviceConnected = false
     }
-
-    private val rebinding = AtomicBoolean(false)
 }

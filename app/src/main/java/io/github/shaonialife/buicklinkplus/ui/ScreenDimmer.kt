@@ -11,7 +11,7 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import io.github.shaonialife.buicklinkplus.shizuku.Shell
+import io.github.shaonialife.buicklinkplus.compat.Shell
 
 /**
  * 可选的常亮和暗幕模式，连接中保持亮屏，断开后恢复超时
@@ -283,7 +283,7 @@ object ScreenDimmer {
                     .trim()
                     .toIntOrNull()
             if (current == null) {
-                Log.w(TAG, "读取屏幕超时失败（内置服务未就绪？）")
+                Log.w(TAG, "读取屏幕超时失败（无 shell 能力，跳过常亮设置）")
                 return@execute
             }
             if (generation != timeoutGeneration.get()) return@execute

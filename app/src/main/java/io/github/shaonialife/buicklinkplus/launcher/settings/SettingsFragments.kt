@@ -21,7 +21,6 @@ import io.github.shaonialife.buicklinkplus.launcher.SupersamplePrefs
 import io.github.shaonialife.buicklinkplus.launcher.VirtualLauncher
 import io.github.shaonialife.buicklinkplus.launcher.settings.AppRowsAdapter.AppHolder
 import io.github.shaonialife.buicklinkplus.session.SessionController
-import io.github.shaonialife.buicklinkplus.shizuku.ShellServiceGate
 import io.github.shaonialife.buicklinkplus.ui.DarkMessageDialog
 import io.github.shaonialife.buicklinkplus.ui.PhonePanelUi
 import io.github.shaonialife.buicklinkplus.ui.setAppearanceBackground
@@ -164,7 +163,6 @@ class OrientationPanelFragment : SettingsPanelFragment() {
     private lateinit var panelView: View
 
     private var capability = OrientationCapability.UNKNOWN
-    private var permissionState = ShellServiceGate.State.STOPPED
     private var capabilityRequest = 0L
     private var systemRevision = 0L
     private val failedPackages = mutableSetOf<String>()
@@ -182,7 +180,7 @@ class OrientationPanelFragment : SettingsPanelFragment() {
         setupAppList(view, R.id.oriList, R.id.oriListIndex, listAdapter) { updateOrphanBanner() }
     }
 
-    /** 返回页面后重新检查授权，不把首次未授权的结果固定在整次进程内 */
+    /** 返回页面后重新检查平台能力，不把首次读取失败的结果固定在整次进程内 */
     override fun onResume() {
         super.onResume()
         refreshCapability()
@@ -197,21 +195,17 @@ class OrientationPanelFragment : SettingsPanelFragment() {
     /** 平台能力和系统覆盖在后台读取，失败保留未知状态，列表始终可以保存配置 */
     private fun refreshCapability() {
         val expectedView = view ?: return
-        val app = expectedView.context.applicationContext
         val request = ++capabilityRequest
         val revision = systemRevision
         Bg.run("orientation-capability") {
-            val permission = ShellServiceGate.state(app)
             val platform =
                 when {
                     android.os.Build.VERSION.SDK_INT < AppOrientationCompat.MIN_SUPPORTED_SDK -> OrientationCapability.UNSUPPORTED
-                    permission != ShellServiceGate.State.READY -> OrientationCapability.UNKNOWN
                     else -> AppOrientationCompat.capability()
                 }
-            val state = if (permission == ShellServiceGate.State.READY) AppOrientationCompat.readSystemEnabled() else null
+            val state = AppOrientationCompat.readSystemEnabled()
             activity?.runOnUiThread {
                 if (!isAdded || !isResumed || this.view !== expectedView || request != capabilityRequest) return@runOnUiThread
-                permissionState = permission
                 capability = if (platform == OrientationCapability.SUPPORTED && state == null) OrientationCapability.UNKNOWN else platform
                 // 查询开始后若用户已完成一次修改，旧快照不能覆盖新的系统状态
                 if (systemRevision == revision) systemOn = state.orEmpty()
@@ -239,17 +233,14 @@ class OrientationPanelFragment : SettingsPanelFragment() {
             when {
                 android.os.Build.VERSION.SDK_INT < AppOrientationCompat.MIN_SUPPORTED_SDK ->
                     "横屏兼容项需要 Android 14 及以上，当前为 Android ${android.os.Build.VERSION.RELEASE}。可以保存名单，当前系统暂时无法应用。"
-                permissionState != ShellServiceGate.State.READY ->
-                    "可以先勾选应用并保存。请到“权限与后台”激活内置服务，返回此页后会自动重新检查；未授权不代表系统不支持。"
                 capability == OrientationCapability.UNKNOWN ->
-                    "尚未成功读取系统横屏能力，可能是权限服务中断或检查暂时失败。配置已保留，可重新检查后再连接车机。"
+                    "尚未成功读取系统横屏能力，可能是检查暂时失败。配置已保留，可重新检查后再连接车机。"
                 else ->
                     "系统检查成功，但未发现完整的横屏兼容项。配置仍可保存，实际能否横屏取决于当前系统和目标应用。"
             }
         banner.text =
             when {
                 android.os.Build.VERSION.SDK_INT < AppOrientationCompat.MIN_SUPPORTED_SDK -> "当前系统低于 Android 14 · 查看说明"
-                permissionState != ShellServiceGate.State.READY -> "可先配置，启用前请完成内置服务激活 · 查看"
                 capability == OrientationCapability.UNKNOWN -> "暂未确认横屏能力 · 点击重查"
                 else -> "当前系统的横屏兼容项不完整 · 查看"
             }
@@ -345,7 +336,7 @@ class OrientationPanelFragment : SettingsPanelFragment() {
             refresh(shown)
 
             row.setOnClickListener {
-                // 系统写入必须异步执行，两次 shell 各有 4s 超时，最坏可达 8s
+                // 系统写入必须异步执行，串行写队列最坏可达 8s
                 // 直接同步调用会把点击回调所在的主线程卡到 ANR。
                 val target = !shown
                 shown = target
@@ -382,7 +373,7 @@ class OrientationPanelFragment : SettingsPanelFragment() {
 
                         AppOrientationCompat.WriteResult.FAILED -> {
                             failedPackages.add(requestedPackage)
-                            hostToast("配置已保存，暂未应用；请检查内置服务后重连")
+                            hostToast("配置已保存，暂未应用；可稍后重新检查")
                         }
                     }
                     listAdapter.refreshRows(rebind = true)
@@ -461,7 +452,7 @@ class OrientationPanelFragment : SettingsPanelFragment() {
                                                     listAdapter.refreshRows(rebind = true)
                                                     hostToast("「$requestedLabel」横屏残留已清除——应用将重启")
                                                 } else {
-                                                    hostToast("清除失败（内置服务异常）")
+                                                    hostToast("清除失败，可稍后重试")
                                                 }
                                             }
                                         }

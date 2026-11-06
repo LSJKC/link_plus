@@ -16,7 +16,7 @@
     <string name="map_to_phone">将普通地图交给手机</string>
     <string name="map_to_car">确认并交回车机</string>
     <string name="map_content_scale">地图内容比例：%1$d%%</string>
-    <string name="settings_search_hint">搜索功能，如：壁纸、帧率、激活</string>
+    <string name="settings_search_hint">搜索功能，如：壁纸、帧率、连接</string>
     <string name="settings_search_empty">没有找到相关设置，请尝试功能名或常用词</string>
     <string name="home_prepare">连接准备</string>
     <string name="home_shortcuts">常用入口</string>

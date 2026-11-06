@@ -6,7 +6,6 @@ import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
-import io.github.shaonialife.buicklinkplus.shizuku.Shell
 import io.github.shaonialife.buicklinkplus.util.Bg
 
 /** 音量原值只保存一次，重连后旧会话不恢复新会话音量 */
@@ -47,7 +46,6 @@ internal object MediaMuteController {
     private val lease = MediaMuteLease()
     private var monitor: Thread? = null
     private var deviceCallback: AudioDeviceCallback? = null
-    private var shellAttempted = false
 
     @Volatile
     private var message = ""
@@ -91,7 +89,6 @@ internal object MediaMuteController {
         }
         monitor?.interrupt()
         deviceCallback?.let { runCatching { manager.unregisterAudioDeviceCallback(it) } }
-        shellAttempted = false
         val callback =
             object : AudioDeviceCallback() {
                 override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
@@ -137,17 +134,12 @@ internal object MediaMuteController {
             }
 
         fun silent(): Boolean = manager.getStreamVolume(AudioManager.STREAM_MUSIC) == 0 || manager.isStreamMute(AudioManager.STREAM_MUSIC)
-        var ok =
+        // 内置 shell 服务已随无线 ADB 激活移除，只用 AudioManager 原生接口设置并回读
+        val ok =
             runCatching {
                 if (!silent()) manager.setStreamVolume(AudioManager.STREAM_MUSIC, 0, 0)
                 silent()
             }.getOrDefault(false)
-        if (!ok && !shellAttempted) {
-            shellAttempted = true
-            val result = Shell.exec("cmd media_session volume --stream 3 --set 0", timeoutMs = 2000)
-            ok = runCatching { silent() }.getOrDefault(false)
-            log("AUDIO: 内置服务补设媒体静音 exit=" + result.exitCode + " 回读=" + ok)
-        }
         val next = if (ok) "手机媒体已静音" else "手机静音失败，请检查手机媒体输出"
         if (next != message) log("AUDIO: " + next)
         message = next

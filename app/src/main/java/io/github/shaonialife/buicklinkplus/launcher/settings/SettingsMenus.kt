@@ -51,7 +51,7 @@ object SettingsMenus {
             Item(LAYOUT, "显示与布局", "分辨率、码率与帧率", R.drawable.ic_menu_display),
             Item(MAP, "地图与导航", "默认地图与高德车载页面", R.drawable.ic_menu_map),
             Item(AUDIO, "音乐与声音", "音频策略与当前通路", R.drawable.ic_speaker),
-            Item(CONNECTION, "连接与设备", "目标车辆、内置激活、网络与权限", R.drawable.ic_wifi),
+            Item(CONNECTION, "连接与设备", "目标车辆、网络与权限", R.drawable.ic_wifi),
             Item(PERMISSIONS, "权限与后台", "首次授权与省电指引", R.drawable.ic_brightness),
             Item(ABOUT, "帮助与诊断", "入门说明、状态、日志、版本与许可", R.drawable.ic_menu_dock),
         )
@@ -90,7 +90,7 @@ object SettingsMenus {
                 )
             } +
             listOf(
-                SearchEntry(PERMISSIONS, "权限与后台", "内置服务、蓝牙、通知与电池设置", "激活 省电 自启动 授权 Shizuku ADB"),
+                SearchEntry(PERMISSIONS, "权限与后台", "蓝牙、通知与电池设置", "省电 自启动 授权 通知 蓝牙"),
                 SearchEntry(CONNECTION, "目标车辆与连接策略", "选择已配对车机，设置网络与兼容连接", "蓝牙 WiFi 热点 流量 SSID 自动连接"),
                 SearchEntry(APPEARANCE, "壁纸与显示外观", "壁纸位置、车机面板与侧栏", "背景 图片"),
                 SearchEntry(ABOUT, "日志与运行状态", "导出诊断记录，查看当前版本和许可", "帮助 错误 免责声明 隐私 开源"),

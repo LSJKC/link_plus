@@ -272,18 +272,9 @@ class AudioSender(
         }
     }
 
-    /** 优先服务侧采集，失败时使用用户已授权的兼容方式 */
+    /** 使用用户已授权的系统媒体采集方式（内置服务采集通道已随无线 ADB 激活移除） */
     private fun createCaptureSource(projection: MediaProjection?): AudioCaptureSource {
         context?.let { MediaMuteController.recover(it, log) }
-        val service = io.github.shaonialife.buicklinkplus.shizuku.CarInputClient.service
-        if (service != null) {
-            runCatching {
-                ShellCapture.open(service, sampleRate) { !stopped.get() }
-            }.onSuccess {
-                log("AUDIO: 采集来源=内置服务媒体与导航路由；不追加手机全局静音")
-                return it
-            }.onFailure { log("AUDIO: 内置服务采集不可用：${it.cause?.message ?: it.message}") }
-        }
         check(!stopped.get()) { "音频会话已取消" }
         checkNotNull(projection) { "请在手机端申请兼容声音授权，视频连接继续" }
         val format =

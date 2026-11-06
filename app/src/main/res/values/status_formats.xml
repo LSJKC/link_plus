@@ -3,7 +3,6 @@
     <string name="weather_refresh_explanation">默认按当前定位显示天气；定位不可用时使用所选城市，每 30 分钟自动刷新</string>
     <string name="battery_percent">%1$s%2$d%%</string>
     <string name="media_time_pair">%1$s / %2$s</string>
-    <string name="service_not_ready_details">内置服务未就绪（%1$s），无法连接，点下方“内置服务”查看处理方法</string>
     <string name="hero_frame_stats">分辨率 %1$d%% · %2$d/%3$d fps</string>
     <string name="sleep_policy_details">%1$s · %2$s · 点此查看后台运行指引</string>
     <string name="home_preparation_details">已准备 %1$d / %2$d\n%3$s</string>

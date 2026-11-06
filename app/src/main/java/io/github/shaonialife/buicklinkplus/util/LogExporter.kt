@@ -5,11 +5,8 @@ import android.content.Context
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
-import android.os.Looper
 import android.provider.MediaStore
 import io.github.shaonialife.buicklinkplus.session.SessionController
-import io.github.shaonialife.buicklinkplus.shizuku.EmbeddedServiceProvider
-import io.github.shaonialife.buicklinkplus.shizuku.Shell
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -108,23 +105,7 @@ object LogExporter {
                 appendLine("（文件日志不可用——导出界面缓冲，可能不完整）")
                 append(fallbackText)
             }
-            appendLine()
-            appendLine("================ SHELL-INPUT 输入诊断 ================")
-            appendLine("采集经过时间=${android.os.SystemClock.elapsedRealtime()}ms；只读末尾 ${ShellInputLogExcerpt.MAX_BYTES} 字节")
-            appendLine(collectInputDiagnostics(context))
         }
-
-    /**
-     * 只在用户导出时后台读取固定文件，服务更换即丢弃结果，失败不影响主日志导出
-     */
-    private fun collectInputDiagnostics(context: Context): String {
-        if (Looper.myLooper() == Looper.getMainLooper()) return "未采集：输入诊断不能阻塞界面线程"
-        val owner = EmbeddedServiceProvider.shell ?: return "未采集：内置服务未连接，未读取历史 shell 文件"
-        val result = Shell.exec("tail -c ${ShellInputLogExcerpt.MAX_BYTES} /data/local/tmp/carinput_svc.log", timeoutMs = 1500)
-        if (EmbeddedServiceProvider.shell !== owner) return "未采集：读取期间内置服务已更换或断开，已丢弃旧结果"
-        if (!result.ok) return "未采集：shell 读取失败，退出码=${result.exitCode}；未导出原始错误文本"
-        return ShellInputLogExcerpt.extract(result.output, context.packageName)
-    }
 
     @Suppress("DEPRECATION")
     private fun versionName(context: Context): String =

@@ -882,7 +882,7 @@ class AirPlayClient(
                     "AIRPLAY: 403 排查——接收端若启用了设备过滤，请在接收端选择本机蓝牙地址 " +
                         "$deviceId" +
                         if (deviceId == DeviceIdentity.PLACEHOLDER_MAC) {
-                            "（当前是占位值：未能解析真实蓝牙 MAC，内置服务是否就绪？）"
+                            "（当前是占位值：未能解析真实蓝牙 MAC，请在手机设置「连接与设备」里手填本机蓝牙地址）"
                         } else {
                             ""
                         },

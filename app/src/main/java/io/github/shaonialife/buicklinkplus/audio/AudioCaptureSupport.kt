@@ -1,7 +1,7 @@
 package io.github.shaonialife.buicklinkplus.audio
 
 import android.os.IBinder
-import io.github.shaonialife.buicklinkplus.shizuku.CarInputClient
+import io.github.shaonialife.buicklinkplus.compat.CarInputClient
 
 /** UI 只读取能力快照，不调用远程服务 */
 object AudioCaptureSupport {

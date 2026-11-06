@@ -10,7 +10,7 @@
 
 ## 0. 一句话目标
 
-**在 link_plus 的可编译源码上重做一个 “CarLife → 无线 CarPlay” 发送端：CarLife 作为内容源，复用 link_plus 的 iAP2/AirPlay/视频/音频/触摸/会话管理，不修改闭源 APK，不做 smali 插桩，不需要 root/Shizuku。**
+**在 link_plus 的可编译源码上重做一个 “CarLife → 无线 CarPlay” 发送端：CarLife 作为唯一内容源，复用 link_plus 的 iAP2/AirPlay/视频/音频/触摸/会话管理，不修改闭源 APK，不做 smali 插桩，不需要 root/Shizuku，也不保留内置无线 ADB 激活。**
 
 首版以“能用、可维护、可实测”为主；不追求一比一复刻旧龟壳的壁纸/安全区外观。原版外观作为可选 P2。
 
@@ -28,7 +28,7 @@
 目标：在 link_plus 源码基线上重构 CarLife → 无线 CarPlay 发送端：
 - CarLife 作为唯一内容源（视频/音频/触摸/导航），复用 link_plus 的 iAP2/AirPlay/会话/编码/发送；
 - 不做 smali 插桩，不修改闭源 APK，不需要 root/Shizuku；
-- 保留 link_plus 内置无线 ADB 激活方式；
+- 不保留内置无线 ADB 激活；不引入 root/Shizuku/ADB；只使用 Android 原生、无需 ADB 权限的能力；
 - 先做 P1A（CarLife 视频直出），再做音频、触摸、导航、设置；
 - 每阶段编译、测试、实车/日志验收后再进入下一阶段；
 - 不提前提交最终版，不向旧 hybrid63 写代码。
@@ -76,7 +76,7 @@
 
 - **没有 CarLife**：全仓 `CarLife` 0 命中，必须移植；
 - 有自己的桌面/虚拟屏，不是原版龟壳的安全区/壁纸布局；
-- 无 root/Shizuku，但使用**内置无线 ADB**（开发者选项 → 无线调试 → 配对激活）；
+- 无 root/Shizuku，但原版使用**内置无线 ADB**（开发者选项 → 无线调试 → 配对激活）实现桌面/触摸注入等能力；本分支不保留该激活路径，相关能力按无 ADB 模型移除或降级；
 - Android 17 息屏保持连接问题，README 也承认；
 - 无结构化 AMap LinkSDK，导航目前是通知文本解析；
 - 封面 file-transfer 只有会话声明，没有完整 artwork 发送端。
@@ -93,7 +93,7 @@
 4. 车机触摸回传给 CarLife；
 5. 车机导航指引（0x5201/0x5202）尽量复用旧工程经验；
 6. 连接/断开/重连稳定；
-7. 设置页只保留实际功能，不出现 Shizuku/root 项；
+7. 设置页只保留实际功能，不出现 Shizuku/root/内置 ADB 激活项；
 8. 实车日志可导出。
 
 ### 3.2 首版可以不做
@@ -108,7 +108,7 @@
 ### 3.3 明确不做
 
 - 不往闭源 APK 里加 smali；
-- 不依赖 root/Shizuku；
+- 不依赖 root/Shizuku/内置无线 ADB；
 - 不修改 link_plus 的第三方许可文件；
 - 不在未验证情况下硬编码 file-transfer session=12；
 - 不把 CarLife 的 TTS 混进媒体格式导致 48000/2ch 被改写。
@@ -171,7 +171,7 @@ CarLifeScreenSource : ScreenSource
 
 ### 4.2 音频
 
-link_plus `AudioSender` 当前从 MediaProjection/ADB 采集，**没有公开 feedPcm**。需要新增：
+link_plus `AudioSender` 当前从 MediaProjection 采集（原版另有内置 ADB/shell 辅助的采集路径，本分支不保留），**没有公开 feedPcm**。需要新增：
 
 ```text
 AudioSender.feedExternalPcm(pcm, rate, channels, isTts)
@@ -233,10 +233,9 @@ TouchRouter → CarLifeTouchSink → CarLifeHuClient.sendTouchAction(...)
 
 保留：
 
-- link_plus 内置无线 ADB 激活；
 - 通知使用权；
 - 媒体/录音等按需权限；
-- CarLife 连接开关/内容源；
+- CarLife 连接（唯一内容源，不设切换开关）；
 - 音频注入/TTS；
 - 导航 iAP2；
 - 安全区/letterbox（P1B 后）；
@@ -244,7 +243,7 @@ TouchRouter → CarLifeTouchSink → CarLifeHuClient.sendTouchAction(...)
 
 移除：
 
-- Shizuku/Root 入口；
+- Shizuku/Root/内置无线 ADB 激活入口；
 - 未使用的高级实验开关；
 - 旧工程里与本产品无关的入口；
 - 任何“权限服务”文案。
@@ -309,14 +308,14 @@ TouchRouter → CarLifeTouchSink → CarLifeHuClient.sendTouchAction(...)
 - `AudioSender` 的外部 PCM 入口/TTS 混音；
 - `TouchRouter` 到 CarLife 触摸通道；
 - `SessionController` 生命周期；
-- 设置页/权限/激活 UI。
+- 设置页/权限模型（无 ADB 激活 UI）。
 
 **不要搬**
 
 - smali 接缝（Aq/d9/eh/vm）；
 - 闭源 APK 的布局/队列补丁；
 - 旧 hybrid63 的 d9 字段/反射补丁；
-- 旧版 Activity 的 Shizuku/Root 入口。
+- 旧版 Activity 的 Shizuku/Root/内置无线 ADB 入口。
 
 因此新窗口的第一件事是**读懂并迁移旧 Java 逻辑**，不是重新写一套 CarLife 协议；但最后跑在 link_plus 里的渲染/音频/触摸/会话层是新的源码实现。
 
@@ -330,16 +329,16 @@ TouchRouter → CarLifeTouchSink → CarLifeHuClient.sendTouchAction(...)
 
 - 确认 JDK17、SDK34、Build Tools 35、NDK 27；
 - `./gradlew.bat :app:assembleBuick` 成功；
-- 在目标手机安装，link_plus 原功能连接车机成功；
+- 在目标手机安装，确认无内置 ADB 激活的启动/授权流程可用；
 - 记录：
   - 车机型号、手机型号/ROM；
   - 视频 profile（分辨率/fps/bitrate）；
   - 蓝牙/iAP2/AirPlay 日志；
-  - 有线/无线 ADB 激活流程。
+  - 无内置 ADB 激活：装 APK → 直接连接（Android 原生权限）。
 
 验收：
 
-- link_plus 原版能出画面、声音、触摸；
+- 基线可构建、可安装、可启动；画面/声音/触摸随 P1A CarLife 内容源验收；
 - 无本仓库代码改动；
 - 日志可导出。
 
@@ -349,7 +348,7 @@ TouchRouter → CarLifeTouchSink → CarLifeHuClient.sendTouchAction(...)
 
 - 移植 CarLife 客户端/协议/解码；
 - 实现 `CarLifeScreenSource`，decoder output 到 `VideoSender` Surface；
-- 在设置页加“CarLife 内容源”开关；
+- 不设内容源开关：CarLife 为唯一内容源；
 - 处理 98311/98386/65570 时序（旧工程经验，见 §8）；
 - 解码器输出尺寸 1280x720，编码 profile 按车机请求；
 - 不要求壁纸/圆角。
@@ -421,7 +420,7 @@ TouchRouter → CarLifeTouchSink → CarLifeHuClient.sendTouchAction(...)
 - 0x5201/0x5202 上行（组件 1/2、u64 maneuverState）；
 - AMap LinkSDK 可选；
 - 通知兜底；
-- 设置页清理 Shizuku/无用项；
+- 设置页清理内置 ADB/Shizuku/无用项；
 - 日志导出。
 
 验收：
@@ -522,17 +521,19 @@ TouchRouter → CarLifeTouchSink → CarLifeHuClient.sendTouchAction(...)
 
 ---
 
-## 9. 权限/激活模型（必须让用户知道）
+## 9. 权限模型（必须让用户知道）
 
-link_plus 不需要 Shizuku/Root，但需要：
+本分支**不保留** link_plus 内置无线 ADB 激活；用户不再需要：
 
 ```text
 开发者选项 → 无线调试 → 配对 → 应用内激活内置服务
 ```
 
-这是高权限 shell 通道，和普通 App 权限不同；如果用户连无线调试都不接受，link_plus 路线不适合。
+也不需要 Shizuku/root。应用只申请 Android 常规权限（蓝牙、附近 Wi-Fi、通知、录音、悬浮窗、前台服务等），安装后授予即可连接车机。CarLife 画面（H.264：本机 TCP 7240/8240）、音频（9240/9241）、触摸（9340）全部走 CarLife 自身 TCP 通道，不需要 shell 权限。
 
-不要把它描述成“完全无权限/零门槛”。
+无 ADB 模型、已移除能力和用户可见权限的完整说明见 [no-adb-model.md](no-adb-model.md)。
+
+不要把本方案描述成“完全无权限/零门槛”：仍需普通运行时权限、车机配对，并且需要手机在 CarLife+ 中手动进入「无线连接」。
 
 ---
 
@@ -559,19 +560,19 @@ link_plus 不需要 Shizuku/Root，但需要：
 
 ### 风险
 
-1. link_plus 内置 ADB 在目标 Honor/Android 17 上激活失败/掉线；
+1. 移除内置 ADB 后，原版隐形屏桌面/触摸注入等能力不可用，功能面缩小，需原生替代方案；
 2. CarLife 解码直出到编码器 Surface 尺寸不匹配；
 3. AudioSender 改造破坏原有 MediaProjection 音频；
 4. 触摸坐标/权限问题；
 5. iAP2 导航上行需要真车验证；
 6. 车机兼容/发热/断流；
-7. 第三方许可（LGPL SPAKE2/Apache libadb）发布合规；
+7. 第三方许可（CarPToCarL MIT、Apache 等组件）发布合规；
 8. 旧工程未验证的 CarLife 细节移植后回归。
 
 ### 回滚
 
 - 每个阶段独立分支/commit；
-- P1A 不删旧 `HiddenDisplaySource`，用开关切换；
+- P1A 以 CarLife 为唯一内容源，不设源切换开关；回滚依赖分支/commit；
 - P2 保留 MediaProjection 路径；
 - 任何阶段实车失败，回到上一 commit；
 - 旧插桩 UI37 继续保留，不删除，直到新工程通过验收。
@@ -806,14 +807,14 @@ SHA-256 E1658D3537D68E6D18B5C2B6C33F57A96CA0E6B459E52AB0594E81C5C99FE905
 ### 14.8 设备
 
 - Android 12+ 手机；
-- USB 调试或无线调试；
 - 目标车机支持无线 CarPlay；
-- 内置无线 ADB 激活需要在开发者选项开启无线调试并按应用提示配对；
+- 手机安装 CarLife+ 并能手动进入「无线连接」；
+- 不需要开发者选项、无线调试或 ADB 配对（无内置 ADB 激活流程）；
 - 测试前记录手机/ROM/车机/版本。
 
 ### 14.9 第一轮禁用项
 
-- 不装 Shizuku；
+- 不装 Shizuku，不使用内置无线 ADB 激活；
 - 不使用 root；
 - 不修改闭源 APK；
 - 不在未验证时发 iAP2 file-transfer；

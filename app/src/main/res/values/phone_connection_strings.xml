@@ -13,4 +13,17 @@
     <string name="phone_connection_compatibility_hint">自动连接遇到问题时使用</string>
     <string name="phone_connection_manual">手动连接系统 Wi-Fi　›</string>
     <string name="phone_connection_manual_hint">收到车机信息后可用。手动连接可能影响手机流量上网，由系统决定网络路径</string>
+    <string name="phone_connection_bt_mac_title">本机蓝牙地址（可选手填）</string>
+    <string name="phone_connection_bt_mac_explain">多数机型可自动解析（sysfs / Settings.Secure）；Honor/MagicOS 等机型系统会脱敏，需要手动填入本机真实蓝牙地址。\n\n地址是无线 CarPlay 的设备身份，占位值会导致车机不邀请。可在手机「设置 → 关于手机 → 状态信息」或车机蓝牙列表里查看本机蓝牙地址。</string>
+    <string name="phone_connection_bt_mac_status_override">当前状态：已手填 %1$s</string>
+    <string name="phone_connection_bt_mac_status_auto">当前状态：自动解析成功 %1$s</string>
+    <string name="phone_connection_bt_mac_status_missing">当前状态：未解析（占位 %1$s），车机可能不会邀请</string>
+    <string name="phone_connection_bt_mac_hint">AA:BB:CC:DD:EE:FF</string>
+    <string name="phone_connection_bt_mac_save">保存</string>
+    <string name="phone_connection_bt_mac_clear">清除</string>
+    <string name="phone_connection_bt_mac_cancel">取消</string>
+    <string name="phone_connection_bt_mac_invalid">格式不对——需 12 位十六进制</string>
+    <string name="phone_connection_bt_mac_cleared">已清除手填地址，将使用自动解析</string>
+    <string name="phone_connection_bt_mac_saved">已保存 %1$s</string>
+    <string name="phone_connection_bt_mac_unresolved_snack">本机蓝牙地址未解析：若车机不邀请，请在 设置 → 连接与设备 里手填本机蓝牙地址</string>
 </resources>

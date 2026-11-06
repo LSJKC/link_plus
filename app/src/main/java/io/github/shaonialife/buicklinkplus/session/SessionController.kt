@@ -12,7 +12,9 @@ import io.github.shaonialife.buicklinkplus.bt.BtSessionGate
 import io.github.shaonialife.buicklinkplus.bt.Iap2BluetoothClient
 import io.github.shaonialife.buicklinkplus.bt.Iap2BluetoothServer
 import io.github.shaonialife.buicklinkplus.bt.TargetDevicePrefs
-import io.github.shaonialife.buicklinkplus.capture.HiddenDisplaySource
+import io.github.shaonialife.buicklinkplus.capture.CarLifeScreenSource
+import io.github.shaonialife.buicklinkplus.capture.ScreenSource
+import io.github.shaonialife.buicklinkplus.compat.Shell
 import io.github.shaonialife.buicklinkplus.iap2.Iap2MessageIds
 import io.github.shaonialife.buicklinkplus.iap2.Iap2SenderSession
 import io.github.shaonialife.buicklinkplus.iap2.ReceiverProfile
@@ -32,9 +34,6 @@ import io.github.shaonialife.buicklinkplus.net.WifiStatus
 import io.github.shaonialife.buicklinkplus.net.compatHost
 import io.github.shaonialife.buicklinkplus.render.DisplayGeometry
 import io.github.shaonialife.buicklinkplus.service.CarPlayService
-import io.github.shaonialife.buicklinkplus.shizuku.CarInputClient
-import io.github.shaonialife.buicklinkplus.shizuku.Shell
-import io.github.shaonialife.buicklinkplus.shizuku.ShellServiceGate
 import io.github.shaonialife.buicklinkplus.ui.ScreenDimmer
 import io.github.shaonialife.buicklinkplus.util.Bg
 import io.github.shaonialife.buicklinkplus.util.DebugFileLog
@@ -158,10 +157,10 @@ object SessionController {
     fun ensure(context: Context) {
         appContext = context.applicationContext
         ensureSessionObjects(context.applicationContext)
-        // 横屏兼容写入失败的原因（user build 限制 / 内置服务故障）只有这里能落盘：
+        // 横屏兼容写入失败的原因（user build 限制 / 无 shell 通道）只有这里能落盘：
         // 车机侧设置面板的 toast 只给用户看，排查需要日志。
         AppOrientationCompat.diagSink = ::appendLog
-        // 主线程 shell 调用写入文件日志，方便排查 ANR
+        // 主线程 shell 调用写入文件日志，方便排查 ANR（本版本无 shell，仅保留诊断出口）
         Shell.violationSink = ::appendLog
     }
 
@@ -273,7 +272,7 @@ object SessionController {
     @Volatile
     // 仅持有 applicationContext 的会话资源；退出时停止并清理，不持有 Activity
     @android.annotation.SuppressLint("StaticFieldLeak")
-    var currentHiddenSource: HiddenDisplaySource? = null
+    var currentScreenSource: ScreenSource? = null
 
     /** 当前会话的共享密钥与接收端地址：投影授权晚于连接时，动态补启音频用。 */
     @Volatile
@@ -474,25 +473,13 @@ object SessionController {
         connectCancelled = false
         clearWifiCredentials()
         phaseHint = "正在建立车机蓝牙连接…"
-        when (
-            ShellServiceGate
-                .state(context)
-        ) {
-            ShellServiceGate.State.READY ->
-                appendLog("SERVICE: 就绪（触摸注入可用）")
-
-            else -> {
-                phaseHint = "内置服务状态发生变化，请重新检查连接环境"
-                appendLog("PREFLIGHT: 启动前内置服务已失去就绪状态，本次未发起连接")
-                uiHintSink?.invoke("内置服务已失去就绪状态，请重新检查连接环境")
-                return
-            }
-        }
+        // 本版本已移除内置无线 ADB/shell 激活：连接不再依赖内置服务就绪，直接使用 Android 原生链路。
+        appendLog("SERVICE: 无内置 ADB/shell 服务（已移除），直接进入连接流程")
         CarPlayService
             .start(context)
         // 连接开始就发布 ctrl 能力，换网后由 ensureForNetwork 重新注册
         ctrlAdvertiser?.resetInviteCount()
-        // 后台发布：start() 首次要向内置服务解析真实蓝牙 MAC（shell），不能在主线程做
+        // 后台发布：start() 首次要解析本机蓝牙 MAC（sysfs/用户手填等免 ADB 来源），不能在主线程做
         Bg.run("ctrl-publish") { ctrlAdvertiser?.start() }
         // 真车路径：手机主动连车机（SDP …caff 配件服务）
         // 测试台路径：监听手机侧 iPhone UUID，等 DiPlay/xcertplay 回连
@@ -545,13 +532,18 @@ object SessionController {
         reason: String = "会话退役",
     ) {
         if (expected != null && currentClient !== expected) return
-        if (currentClient == null && videoSender == null && audioSender == null && currentHiddenSource == null) return
+        if (currentClient == null && videoSender == null && audioSender == null && currentScreenSource == null) return
         // 先撤销所有权，再停线程，防止旧推流的收尾回调误伤重连中的会话
         val retiringClient = currentClient
         val cause = retiringClient?.termination?.record(reason, android.os.SystemClock.elapsedRealtime())
         lastSessionEnd = "会话=${System.identityHashCode(retiringClient)} 首因=$cause"
         appendLog("SESSION-END: $lastSessionEnd")
         currentClient = null
+        // 先释放内容源（解码器/收流线程），再释放编码器输入 Surface：
+        // 避免解码线程在 Surface 释放瞬间仍在渲染（部分 ROM 有竞态）。
+        val retiringSource = currentScreenSource
+        currentScreenSource = null
+        retiringSource?.release()
         val retiringVideo = videoSender
         videoSender = null
         retiringClient?.cancelled = true
@@ -563,8 +555,6 @@ object SessionController {
         audioSender = null
         currentSharedSecret = null
         currentAudioHost = null
-        currentHiddenSource?.release()
-        currentHiddenSource = null
         TouchRouter
             .reset()
         // 配对开始也会调用这里，保留 BT 控制连接；用户断开时再释放
@@ -579,7 +569,7 @@ object SessionController {
     /** 导出带采样时间和会话 ID 的状态快照 */
     fun diagnosticSnapshot(): String =
         "采样经过时间=${android.os.SystemClock.elapsedRealtime()}ms ${sessionStarting.diagnostics()} " +
-            "会话=${System.identityHashCode(currentClient)} 输入服务就绪=${CarInputClient.ready} " +
+            "会话=${System.identityHashCode(currentClient)} 内容源=${currentScreenSource?.name ?: "无"} " +
             "地图=${VirtualLauncher.mapDiagnostics()} 音频=${audioStatus()} 上次结束=$lastSessionEnd"
 
     /** 会话已建立且投影就绪、但音频尚未启动时，动态补启（投影授权晚于连接的场景）。 */
@@ -626,13 +616,13 @@ object SessionController {
      */
     private fun autoJoinCarWifi(wifi: Iap2SenderSession.WifiConfiguration) {
         Bg.run("wifi-auto-join") {
-            val shellReady =
-                appContext?.let { ShellServiceGate.state(it) == ShellServiceGate.State.READY } == true
+            // 本版本无 shell 通道：WLAN 开关检查与系统网络清理等能力不可用，直接走系统 API 加入。
+            val shellReady = false
             // 1) WLAN 开关。shell 不可用时跳过检查——requestNetwork 会以 Unavailable 反馈。
             if (shellReady && shellWifiDisabled() && !waitForWifiEnabled()) return@run
             if (connectCancelled) return@run
             // 优先使用手机流量时用应用专属网络，并清除系统保存的同名热点
-            // 关闭此项则通过系统加入热点，内置服务不可用时提示手动连接
+            // 关闭此项则通过系统加入热点，无法自动加入时提示手动连接
             if (!useCellularForInternet()) {
                 appendLog(">>> 「优先使用手机流量」关闭——系统级加入 \"${wifi.ssid}\"，手机上网走车机热点")
                 legacyJoinCarWifi(wifi, shellReady)
@@ -856,7 +846,7 @@ object SessionController {
         if (!shellReady) {
             phaseHint = "手机未连接车机网络，请在 WLAN 设置中连接"
             appendLog(
-                ">>> 手机不在车机热点 \"${wifi.ssid}\" 且内置服务未就绪（无法自动加入）——" +
+                ">>> 手机不在车机热点 \"${wifi.ssid}\" 且本版本没有系统网络命令通道（无法自动加入）——" +
                     "请到 系统设置>WLAN 手动加入（密码可点「去连接」复制）",
             )
             return
@@ -892,7 +882,7 @@ object SessionController {
         phaseHint = "正在自动连接车机网络…"
         appendLog(
             ">>> 手机当前 WiFi: ${current ?: "未连接"}（非车机热点）——" +
-                "经内置服务自动切换到 \"${wifi.ssid}\"",
+                "经系统网络命令自动切换到 \"${wifi.ssid}\"",
         )
         if (connectCancelled) return
         val security =
@@ -2020,13 +2010,15 @@ object SessionController {
                                                 val videoDensity =
                                                     (baseDensity * profile.height / setup.displayHeight).toInt().coerceAtLeast(1)
                                                 appendLog("DISPLAY: 生效配置=" + profile + " 安全区=" + geometry.content)
-                                                // 唯一模式：隐形屏（双屏启动器：dock + 应用屏）
-                                                val source =
-                                                    HiddenDisplaySource(
+                                                // 唯一内容源：手机 CarLife+ 的 H.264 码流（P1A 直出）。
+                                                // 本版本已移除内置无线 ADB/shell，原「隐形屏」虚拟屏桌面不再可用，
+                                                // 也不再提供内容源开关；画面只来自 CarLife 本地 TCP 通道。
+                                                val source: ScreenSource =
+                                                    CarLifeScreenSource(
                                                         context.applicationContext,
                                                         log = { line -> appendLog(line) },
                                                     )
-                                                currentHiddenSource = source
+                                                currentScreenSource = source
                                                 val ok =
                                                     source.attach(
                                                         surface,
@@ -2036,12 +2028,14 @@ object SessionController {
                                                         geometry,
                                                         profile.fps,
                                                     )
-                                                val modeStatus =
-                                                    if (ok) "已启动 display=${source.displayId}" else "启动失败（内置服务就绪？）"
-                                                appendLog("MODE: 隐形屏 $modeStatus")
+                                                appendLog(
+                                                    "MODE: CarLife 唯一内容源 " +
+                                                        (if (ok) "已启动（等待 CarLife+ 进入无线连接）" else "启动失败") +
+                                                        "，请求 ${profile.width}x${profile.height}@${profile.fps}fps",
+                                                )
                                                 // 暗幕/常亮只在真正开始投屏后生效（见 ScreenDimmer.sessionActive）：
                                                 // 应用启动时只挂触摸探针，避免「会话早断了、手机过一会儿还是变暗」。
-                                                check(ok) { "隐形屏启动失败" }
+                                                check(ok) { "内容源启动失败" }
                                                 ScreenDimmer.setSessionActive(true)
                                             }
                                         } == true
@@ -2145,8 +2139,8 @@ object SessionController {
             // 端点先到或上次换网失败时也要确认车机热点，不能直接绑定当前任意 WiFi
             Bg.run("wifi-join-on-endpoint") {
                 while (currentAttempt()) {
-                    val shellReady =
-                        appContext?.let { ShellServiceGate.state(it) == ShellServiceGate.State.READY } == true
+                    // 本版本无 shell 通道：系统网络清理不可用，直接走系统 API 加入。
+                    val shellReady = false
                     when (val result = joinCarWifiSpecifier(wifiConfig, shellReady)) {
                         is WifiCarPlayConnector.JoinResult.Joined -> {
                             continueWithNetwork(true)

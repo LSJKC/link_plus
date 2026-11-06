@@ -222,7 +222,7 @@ class SettingsRegressionAndroidTest {
         val service =
             java.lang.reflect.Proxy.newProxyInstance(
                 javaClass.classLoader,
-                arrayOf(io.github.shaonialife.buicklinkplus.shizuku.ICarInput::class.java),
+                arrayOf(io.github.shaonialife.buicklinkplus.compat.ICarInput::class.java),
             ) { _, method, arguments ->
                 when (method.name) {
                     "capabilities" -> 1
@@ -239,7 +239,7 @@ class SettingsRegressionAndroidTest {
                     }
                     else -> null
                 }
-            } as io.github.shaonialife.buicklinkplus.shizuku.ICarInput
+            } as io.github.shaonialife.buicklinkplus.compat.ICarInput
         var error: Throwable? = null
         val caller =
             Thread {

@@ -44,7 +44,7 @@ class PhoneHomeDashboard(
         parent.setPadding(0, dp(12), 0, 0)
         target = row(parent, "目标车辆", R.drawable.ic_car, onTarget)
         heading(parent, R.string.home_prepare)
-        preparation = row(parent, "基础环境", R.drawable.ic_shizuku_shield) { onOpen(SettingsMenus.PERMISSIONS) }
+        preparation = row(parent, "基础环境", R.drawable.ic_app_settings) { onOpen(SettingsMenus.PERMISSIONS) }
         heading(parent, R.string.home_shortcuts)
         val shortcuts = listOf(SettingsMenus.APPS, SettingsMenus.APPEARANCE, SettingsMenus.MAP, SettingsMenus.AUDIO)
         shortcuts.chunked(2).forEach { pair ->

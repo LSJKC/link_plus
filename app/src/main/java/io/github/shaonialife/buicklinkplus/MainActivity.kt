@@ -28,14 +28,13 @@ import androidx.core.content.IntentCompat
 import androidx.core.content.edit
 import androidx.core.graphics.drawable.DrawableCompat
 import androidx.core.net.toUri
-import androidx.lifecycle.Lifecycle
 import io.github.shaonialife.buicklinkplus.bt.BtConnectionPrefs
 import io.github.shaonialife.buicklinkplus.bt.BtProfiles
 import io.github.shaonialife.buicklinkplus.bt.BtSessionGate
 import io.github.shaonialife.buicklinkplus.bt.TargetDevicePrefs
 import io.github.shaonialife.buicklinkplus.input.TouchRouter
 import io.github.shaonialife.buicklinkplus.launcher.VirtualLauncher
-import io.github.shaonialife.buicklinkplus.launcher.settings.AppOrientationCompat
+import io.github.shaonialife.buicklinkplus.launcher.settings.SettingsCategoryFragment
 import io.github.shaonialife.buicklinkplus.launcher.settings.SettingsMenus
 import io.github.shaonialife.buicklinkplus.legal.DisclaimerDialog
 import io.github.shaonialife.buicklinkplus.legal.DisclaimerPrefs
@@ -46,11 +45,6 @@ import io.github.shaonialife.buicklinkplus.service.CarPlayService
 import io.github.shaonialife.buicklinkplus.session.ConnectionPreflight
 import io.github.shaonialife.buicklinkplus.session.SessionCommands
 import io.github.shaonialife.buicklinkplus.session.SessionController
-import io.github.shaonialife.buicklinkplus.shizuku.CarInputClient
-import io.github.shaonialife.buicklinkplus.shizuku.PairingService
-import io.github.shaonialife.buicklinkplus.shizuku.ServiceActivationActivity
-import io.github.shaonialife.buicklinkplus.shizuku.Shell
-import io.github.shaonialife.buicklinkplus.shizuku.ShellServiceGate
 import io.github.shaonialife.buicklinkplus.ui.DarkMessageDialog
 import io.github.shaonialife.buicklinkplus.ui.GlassActivity
 import io.github.shaonialife.buicklinkplus.ui.PanelWindow
@@ -91,12 +85,8 @@ class MainActivity : GlassActivity() {
     }
 
     private lateinit var deviceSubtitle: TextView
-    private lateinit var shizukuChip: TextView
-    private lateinit var shizukuDesc: TextView
-    private lateinit var shizukuBadge: TextView
     private lateinit var hubCar: ImageView
     private lateinit var heroStateText: TextView
-    private lateinit var btnResidualCleanup: TextView
     private lateinit var heroSubline: TextView
     private lateinit var heroStats: TextView
     private lateinit var heroProgress: View
@@ -111,9 +101,6 @@ class MainActivity : GlassActivity() {
     private lateinit var audioDesc: TextView
     private lateinit var btnAudio: TextView
     private lateinit var switchAlwaysOn: androidx.appcompat.widget.SwitchCompat
-    private lateinit var advBody: View
-    private lateinit var advChevron: ImageView
-    private lateinit var shellStateText: TextView
     private lateinit var logBody: View
     private lateinit var logChevron: ImageView
     private lateinit var switchLog: androidx.appcompat.widget.SwitchCompat
@@ -125,11 +112,6 @@ class MainActivity : GlassActivity() {
     private var connectedAt = 0L
     private var hubBlink: ObjectAnimator? = null
 
-    // 启动残留屏检查进行中（英雄卡显示「检查中」）；发现的残留暂缓清理时
-    // 记在 pendingResidualDisplays，状态旁的「清理残留屏」按钮可再次发起
-    private var startupCheckRunning = false
-    private var pendingResidualDisplays: List<Pair<Int, String>>? = null
-
     // 英雄卡实时帧率：1s 轮询对 VideoSender 已发帧计数取差值
     private var lastSentFrames = 0L
 
@@ -138,29 +120,11 @@ class MainActivity : GlassActivity() {
 
     private var activeDisclaimer: androidx.appcompat.app.AlertDialog? = null
 
-    /** 激活页面完成后按原意继续连接，快捷设置入口不自动连接 */
-    private var pendingServiceThenConnect = false
-    private val serviceActivationLauncher =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-            val continueConnection = pendingServiceThenConnect
-            pendingServiceThenConnect = false
-            if (!isFinishing && !isDestroyed) {
-                updateReadyRow()
-                updateServiceChip()
-                phonePermissions?.refresh()
-                if (CarInputClient.ready) {
-                    ensureNotificationAccessAsync()
-                    if (continueConnection) beginConnectionPreparation()
-                }
-            }
-        }
-
     /** 身份查询放在后台，查询期间不能重复开启连接 */
     private var connectionCheckRunning = false
 
-    /** 前台恢复检查只保留一个，身份读取不得阻塞页面 */
-    private var automaticRestoreCheckRunning = false
-    private var lastObservedServiceReady = false
+    /** 本机蓝牙地址占位提示只弹一次（软提示，不阻断连接） */
+    private var bluetoothMacHintShown = false
 
     /** 从选择车机入口申请权限后，只返回选择器，不自动发起连接 */
     private var pendingTargetPickerAfterPermission = false
@@ -320,7 +284,7 @@ class MainActivity : GlassActivity() {
             message =
                 "开启后手机媒体/导航声音投到车机播放、手机本机静音（不开启则车上无声）。\n" +
                     "音视频同时传会增加负载，以看视频为主时可先不开启。\n" +
-                    "优先使用内置服务媒体与导航采集，不可用时申请兼容投屏授权。",
+                    "优先使用系统媒体与导航采集，不可用时申请兼容投屏授权。",
             actions = actions,
         )
     }
@@ -485,98 +449,11 @@ class MainActivity : GlassActivity() {
         )
     }
 
-    /** 内置服务就绪时在后台补授通知使用权，已授权则跳过 */
+    /** 后台尝试补授通知使用权（媒体会话枚举），已授权则跳过；未授权时提示用户手动开启 */
     private fun ensureNotificationAccessAsync() {
         Bg.run("notification-access") {
-            if (ShellServiceGate.state(this) != ShellServiceGate.State.READY) {
-                log("MEDIA: 内置服务未就绪——暂无法自动授予通知使用权（就绪后会补）")
-                return@run
-            }
             NotificationAccess.ensureGranted(this, ::log)
         }
-    }
-
-    /**
-     * 连接前要求服务就绪，区分首次配对、服务停止与正在激活
-     */
-    private fun ensureServiceReady(onReady: () -> Unit) {
-        val state = ShellServiceGate.state(this)
-        if (state == ShellServiceGate.State.READY) {
-            // 内置服务就绪即可静默补授权（此前若因未就绪而跳过，这里补上）
-            ensureNotificationAccessAsync()
-            onReady()
-            return
-        }
-        if (state == ShellServiceGate.State.INPUT_UNAVAILABLE) {
-            recheckInputService(onReady)
-            return
-        }
-        log("SERVICE: 未就绪（$state）——已阻止本次连接")
-        promptServiceNotReady(state, connectAfter = true)
-    }
-
-    /**
-     * 在线权限服务优先在后台复用探活，检查通过才执行原来的操作
-     */
-    private fun recheckInputService(onReady: () -> Unit) {
-        if (isFinishing || isDestroyed || connectionCheckRunning || SessionController.isSessionRunning()) return
-        connectionCheckRunning = true
-        val app = applicationContext
-        Bg.run("input-service-recheck") {
-            val ready = CarInputClient.awaitReady(app, retry = true)
-            runOnUiThread {
-                connectionCheckRunning = false
-                if (isFinishing || isDestroyed || SessionController.isSessionRunning()) return@runOnUiThread
-                updateReadyRow()
-                updateServiceChip()
-                phonePermissions?.refresh()
-                if (ready && CarInputClient.ready) {
-                    ensureNotificationAccessAsync()
-                    onReady()
-                } else {
-                    showInputServiceProblem { recheckInputService(onReady) }
-                }
-            }
-        }
-    }
-
-    /**
-     * 等待超时允许直接重试，不把服务在线误报成需要重新配对
-     */
-    private fun showInputServiceProblem(retry: () -> Unit) {
-        DarkMessageDialog.show(
-            this,
-            "触控服务暂未就绪",
-            "本次未启动车机连接，可点击重试。若持续无响应，请结束并重新打开本软件后激活服务。",
-            listOf(
-                DarkMessageDialog.Action("取消") {},
-                DarkMessageDialog.Action("重试", DarkMessageDialog.Emphasis.PRIMARY, onClick = retry),
-            ),
-        )
-    }
-
-    /** 内置服务未就绪时，用 [DarkMessageDialog] 提供激活和取消操作 */
-    private fun promptServiceNotReady(
-        state: ShellServiceGate.State,
-        connectAfter: Boolean = false,
-    ) {
-        val guidance = ShellServiceGate.guidanceOf(state)
-        DarkMessageDialog.show(
-            this,
-            guidance.title,
-            guidance.message,
-            listOf(
-                DarkMessageDialog.Action("取消") {},
-                DarkMessageDialog.Action(guidance.primaryLabel ?: "激活服务", DarkMessageDialog.Emphasis.PRIMARY) {
-                    if (state == ShellServiceGate.State.INPUT_UNAVAILABLE) {
-                        recheckInputService { if (connectAfter) beginConnectionPreparation() }
-                    } else {
-                        pendingServiceThenConnect = connectAfter
-                        serviceActivationLauncher.launch(Intent(this, ServiceActivationActivity::class.java))
-                    }
-                },
-            ),
-        )
     }
 
     private fun beginWithAudio(enabled: Boolean) {
@@ -632,16 +509,35 @@ class MainActivity : GlassActivity() {
     /** 授权返回后重新检查全部准备项 */
     private fun beginConnectionPreparation() {
         if (isFinishing || isDestroyed || connectionCheckRunning || SessionController.isSessionRunning()) return
-        ensureServiceReady { ensureBluetoothReady { showAudioChoiceDialog() } }
+        warnIfBluetoothMacUnresolved()
+        ensureBluetoothReady { showAudioChoiceDialog() }
+    }
+
+    /**
+     * 本机蓝牙地址未解析时只做软提示，不阻断连接。
+     *
+     * Honor/MagicOS 等机型把地址脱敏成占位值，车机校验 0x4300/0x4E0E 与 ctrl 广播 TXT id 后
+     * 不会邀请；用户可在「设置 → 连接与设备」手填真实地址。
+     */
+    private fun warnIfBluetoothMacUnresolved() {
+        val mac =
+            runCatching { DeviceIdentity.bluetoothMac(applicationContext) }
+                .getOrDefault(DeviceIdentity.PLACEHOLDER_MAC)
+        val source =
+            when {
+                DeviceIdentity.hasOverride(applicationContext) -> "手填"
+                mac == DeviceIdentity.PLACEHOLDER_MAC -> "占位（未解析）"
+                else -> "自动解析"
+            }
+        log("MAC: 本机蓝牙地址=$mac 来源=$source")
+        if (mac != DeviceIdentity.PLACEHOLDER_MAC || bluetoothMacHintShown) return
+        bluetoothMacHintShown = true
+        snack(getString(R.string.phone_connection_bt_mac_unresolved_snack), 6_000L)
     }
 
     /** 列出未就绪项，点击执行对应准备操作 */
     private fun showConnectionPreparationProblem(preparation: ConnectionPreflight.Report) {
         val first = preparation.missing.firstOrNull()?.requirement ?: return
-        if (first == ConnectionPreflight.Requirement.SHELL_SERVICE) {
-            promptServiceNotReady(ShellServiceGate.state(this), connectAfter = true)
-            return
-        }
         log("PREFLIGHT: 已阻止连接，缺少：${preparation.missing.joinToString("、") { it.requirement.title }}")
         DarkMessageDialog.show(
             activity = this,
@@ -664,7 +560,6 @@ class MainActivity : GlassActivity() {
                             when (first) {
                                 ConnectionPreflight.Requirement.TARGET -> showTargetPicker()
                                 ConnectionPreflight.Requirement.IDENTITY -> startConnectionNow()
-                                ConnectionPreflight.Requirement.INPUT_SERVICE -> startConnectionNow()
                                 ConnectionPreflight.Requirement.AUDIO_PERMISSION,
                                 ConnectionPreflight.Requirement.PROJECTION,
                                 -> beginWithAudio(true)
@@ -691,32 +586,6 @@ class MainActivity : GlassActivity() {
             }
             connectionCheckRunning = true
             Bg.run("connection-preflight") {
-                val inputReady =
-                    runCatching { CarInputClient.awaitReady(applicationContext, retry = true) }
-                        .onFailure { log("PREFLIGHT: 输入服务检查中断：${it.message ?: "原因未知"}") }
-                        .getOrDefault(false)
-                if (!inputReady) {
-                    runOnUiThread {
-                        connectionCheckRunning = false
-                        if (!isFinishing && !isDestroyed) {
-                            showInputServiceProblem { startConnectionNow() }
-                        }
-                    }
-                    return@run
-                }
-                val displaysReady =
-                    runCatching { prepareConnectionDisplays() }
-                        .onFailure {
-                            if (it is InterruptedException) Thread.currentThread().interrupt()
-                            log("PREFLIGHT: 残留屏检查异常，本次未启动连接 类型=${it.javaClass.simpleName}")
-                        }.getOrDefault(false)
-                if (!displaysReady) {
-                    runOnUiThread {
-                        connectionCheckRunning = false
-                        if (!isFinishing && !isDestroyed) snack("连接前未能确认残留屏已清理，请查看日志后重试", 4_000L)
-                    }
-                    return@run
-                }
                 runCatching { DeviceIdentity.bluetoothMac(applicationContext, forceRetry = true) }
                     .onFailure { log("PREFLIGHT: 本机身份检查异常：${it.message ?: "原因未知"}") }
                 runOnUiThread finishPreparation@{
@@ -741,15 +610,8 @@ class MainActivity : GlassActivity() {
         disclaimerDeadlineAt = savedInstanceState?.getLong(KEY_DISCLAIMER_DEADLINE, 0L) ?: 0L
 
         deviceSubtitle = findViewById(R.id.deviceSubtitle)
-        shizukuChip = findViewById(R.id.shizukuChip)
-        shizukuDesc = findViewById(R.id.shizukuDesc)
-        shizukuBadge = findViewById(R.id.shizukuBadge)
         hubCar = findViewById(R.id.hubCar)
         heroStateText = findViewById(R.id.heroStateText)
-        btnResidualCleanup = findViewById(R.id.btnResidualCleanup)
-        btnResidualCleanup.setOnClickListener {
-            pendingResidualDisplays?.let { promptResidualDisplays(it) }
-        }
         heroSubline = findViewById(R.id.heroSubline)
         heroStats = findViewById(R.id.heroStats)
         heroProgress = findViewById(R.id.heroProgress)
@@ -764,16 +626,13 @@ class MainActivity : GlassActivity() {
         audioDesc = findViewById(R.id.audioDesc)
         btnAudio = findViewById(R.id.btnAudio)
         switchAlwaysOn = findViewById(R.id.switchAlwaysOn)
-        advBody = findViewById(R.id.advBody)
-        advChevron = findViewById(R.id.advChevron)
-        shellStateText = findViewById(R.id.shellStateText)
         logBody = findViewById(R.id.logBody)
         logChevron = findViewById(R.id.logChevron)
         switchLog = findViewById(R.id.switchLog)
         logText = findViewById(R.id.logText)
         snackbar = findViewById(R.id.snackbar)
 
-        deviceSubtitle.text = deviceName()
+        deviceSubtitle.text = getString(R.string.phone_device_model, deviceName(), Build.VERSION.RELEASE)
         logText.movementMethod = ScrollingMovementMethod()
         // 控制台在长页面 ScrollView 内：按下时申请父级不拦截竖向手势，否则无法手动滚动
         // 仅协调父容器的手势拦截并返回 false，正常点击由既有 click 监听处理
@@ -889,7 +748,6 @@ class MainActivity : GlassActivity() {
                     },
                     onDismiss = {
                         activeDisclaimer = null
-                        restoreServiceOnAppOpen()
                     },
                 )
     }
@@ -907,16 +765,6 @@ class MainActivity : GlassActivity() {
         // ---- 免责声明（只读重看）----
         findViewById<LinearLayout>(R.id.btnDisclaimer).setOnClickListener {
             showDisclaimer(requireAcceptance = false)
-        }
-
-        // ---- 内置服务状态行：未就绪时点它直接看引导（与「启动连接」被拦下同一套文案）----
-        findViewById<LinearLayout>(R.id.rowShizuku).setOnClickListener {
-            val state = ShellServiceGate.state(this)
-            if (state == ShellServiceGate.State.READY) {
-                snack("内置服务已就绪，触控服务将在连接前核验")
-            } else {
-                promptServiceNotReady(state)
-            }
         }
 
         findViewById<TextView>(R.id.sleepPolicyStatus).setOnClickListener { showSleepGuidance() }
@@ -953,7 +801,7 @@ class MainActivity : GlassActivity() {
         ctaButton.setOnClickListener {
             when (heroState) {
                 HeroState.CONNECTED -> promptDisconnect()
-                // 前置检查：内置服务（硬性依赖）→ 蓝牙权限/开关 → 音频选择
+                // 前置检查：蓝牙权限/开关 → 音频选择
                 HeroState.IDLE -> beginConnectionPreparation()
                 // 连接中可取消：卡在错误网络/等待回连时用户主动脱身（弹窗防误触）
                 HeroState.CONNECTING -> promptCancelConnecting()
@@ -1022,14 +870,8 @@ class MainActivity : GlassActivity() {
             }
         }
 
-        // ---- 折叠卡：高级 / 日志 ----
-        bindExpandable(R.id.advHeader, advBody, advChevron)
+        // ---- 折叠卡：日志 ----
         bindExpandable(R.id.logHeader, logBody, logChevron)
-
-        // ---- Shell 全局状态 ----
-        findViewById<View>(R.id.btnShellRefresh).setOnClickListener { refreshShellState() }
-        findViewById<View>(R.id.btnShellReset).setOnClickListener { resetShellState() }
-        refreshShellState(startupCheck = true)
 
         // ---- 日志开关（默认开；关闭后不采集、不渲染；选择持久化） ----
         var logEnabled = preferences.getBoolean("logEnabled", true)
@@ -1066,9 +908,8 @@ class MainActivity : GlassActivity() {
             true
         }
 
-        // 通知使用权（媒体会话枚举，音乐卡数据源）：内置服务就绪时可静默授予。
-        // 幂等可重试——启动时不一定就绪（重启后内置服务未运行、改包名后未授权），
-        // 所以内置服务授权成功、连接建立等时机都会再调一次。
+        // 通知使用权（媒体会话枚举，音乐卡数据源）：需用户在系统设置中手动授权。
+        // 幂等可重试——启动时不一定已授权（改包名、系统重置后），所以启动和连接等时机都会再试一次。
         ensureNotificationAccessAsync()
 
         // ---- 车机设置（手机侧二级菜单：桌面/横屏/超采样/dock/默认地图） ----
@@ -1089,7 +930,6 @@ class MainActivity : GlassActivity() {
 
         TouchRouter.logSink = { line -> log(line) }
         VirtualLauncher.logSink = { line -> log(line) }
-        CarInputClient.logSink = { line -> log(line) }
 
         log("Buick Link + Phase 0 就绪")
         log("真车：与车机蓝牙配对后点「启动连接」，自动请求应用专属热点；手动入网仅作兼容入口")
@@ -1187,9 +1027,19 @@ class MainActivity : GlassActivity() {
         val connection = settings.body(SettingsMenus.CONNECTION)
         val permissionRow = layoutInflater.inflate(R.layout.item_phone_category, connection, false)
         permissionRow.findViewById<TextView>(R.id.categoryTitle).text = SettingsMenus.titleOf(SettingsMenus.PERMISSIONS)
-        permissionRow.findViewById<ImageView>(R.id.categoryIcon).setAppearanceImageResource(R.drawable.ic_shizuku_shield)
+        permissionRow.findViewById<ImageView>(R.id.categoryIcon).setAppearanceImageResource(
+            SettingsMenus.itemOf(SettingsMenus.PERMISSIONS).iconRes,
+        )
         permissionRow.setOnClickListener { settings.showSection(SettingsMenus.PERMISSIONS) }
         connection.addView(permissionRow)
+        // 本机蓝牙地址：Honor/MagicOS 等脱敏机型需用户手填，占位值会导致车机不邀请
+        val bluetoothMacRow = layoutInflater.inflate(R.layout.item_phone_category, connection, false)
+        bluetoothMacRow.findViewById<TextView>(R.id.categoryTitle).text = getString(R.string.phone_connection_bt_mac_title)
+        bluetoothMacRow.findViewById<ImageView>(R.id.categoryIcon).setAppearanceImageResource(R.drawable.ic_bluetooth)
+        bluetoothMacRow.setOnClickListener {
+            SettingsCategoryFragment.showBluetoothMacDialog(this@MainActivity) { message -> snack(message, 4_000L) }
+        }
+        connection.addView(bluetoothMacRow)
         phoneConnectionContent =
             findViewById<View>(R.id.phoneConnectionContent).also { content ->
                 move(content, connection)
@@ -1218,7 +1068,6 @@ class MainActivity : GlassActivity() {
                 }.also { permissions.addView(it, LinearLayout.LayoutParams(-1, -2)) }
         val about = settings.body(SettingsMenus.ABOUT)
         move(heroStats, about)
-        move(findViewById(R.id.advCard), about)
         move(findViewById(R.id.logCard), about)
         move(findViewById(R.id.btnDisclaimer), about)
         homeDashboard =
@@ -1268,7 +1117,6 @@ class MainActivity : GlassActivity() {
         findViewById<View>(R.id.heroCard).visibility = if (settings) View.GONE else View.VISIBLE
         val landscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
         homeHeroScroll?.visibility = if (!settings && landscape) View.VISIBLE else View.GONE
-        shizukuChip.visibility = if (settings) View.GONE else View.VISIBLE
         val tabs =
             listOf(
                 intArrayOf(R.id.phoneHomeTab, R.id.phoneHomeIndicator, R.id.phoneHomeIcon, R.id.phoneHomeLabel),
@@ -1309,7 +1157,6 @@ class MainActivity : GlassActivity() {
         if (quickPermissionRequestPending ||
             pendingStartAfterBtPermission.get() ||
             pendingTargetPickerAfterPermission ||
-            pendingServiceThenConnect ||
             pendingProjectionAfterAudioPermission ||
             pendingStartAfterProjection.get() ||
             connectionCheckRunning
@@ -1318,19 +1165,12 @@ class MainActivity : GlassActivity() {
             return
         }
         when (action) {
-            PhonePermissionsView.Action.CHECK_SERVICE -> checkPermissionService()
             PhonePermissionsView.Action.GUIDE ->
                 DarkMessageDialog.show(
                     this,
                     getString(R.string.phone_permissions_guide),
                     getString(R.string.phone_permissions_guide_body),
                     listOf(
-                        DarkMessageDialog.Action(
-                            getString(R.string.phone_permissions_configure_shizuku),
-                            DarkMessageDialog.Emphasis.PRIMARY,
-                        ) {
-                            handlePermissionShortcut(PhonePermissionsView.Action.CHECK_SERVICE)
-                        },
                         DarkMessageDialog.Action(getString(R.string.phone_permissions_configure_devices)) {
                             handlePermissionShortcut(PhonePermissionsView.Action.DEVICE_PERMISSIONS)
                         },
@@ -1387,14 +1227,6 @@ class MainActivity : GlassActivity() {
             PhonePermissionsView.Action.SLEEP_HELP -> showSleepGuidance()
             PhonePermissionsView.Action.DIM_NOW -> findViewById<View>(R.id.rowDim).performClick()
         }
-    }
-
-    /**
-     * 快捷设置只打开激活页面，不继续之前的连接任务
-     */
-    private fun checkPermissionService() {
-        pendingServiceThenConnect = false
-        serviceActivationLauncher.launch(Intent(this, ServiceActivationActivity::class.java))
     }
 
     /** 只申请缺失权限，永久拒绝时打开设置，返回后不自动连接 */
@@ -1521,25 +1353,11 @@ class MainActivity : GlassActivity() {
         if (s == HeroState.CONNECTING) {
             heroSubline.text = SessionController.phaseHint ?: DEFAULT_CONNECTING_HINT
         }
-        // 启动残留屏检查进行中：状态与副标题临时切换为检查提示
-        if (s == HeroState.IDLE && startupCheckRunning) {
-            heroStateText.text = "检查中"
-            heroSubline.text = "正在检查残留屏…"
-            heroProgress.visibility = View.VISIBLE
-        }
-        // 空闲但内置服务未就绪：副标题直接说明「点了也连不上」，避免用户反复点
-        if (s == HeroState.IDLE && !startupCheckRunning) {
-            val gate = ShellServiceGate.state(this)
-            if (gate != ShellServiceGate.State.READY) {
-                heroSubline.text =
-                    getString(R.string.service_not_ready_details, ShellServiceGate.guidanceOf(gate).title)
-            }
-        }
         if (s == HeroState.IDLE && connectionCheckRunning) {
             heroStateText.text = "检查中"
             heroSubline.text = "正在核对连接环境和本机蓝牙身份…"
             heroProgress.visibility = View.VISIBLE
-        } else if (s == HeroState.IDLE && !startupCheckRunning) {
+        } else if (s == HeroState.IDLE) {
             heroStateText.text = "未连接"
             heroProgress.visibility = View.GONE
         }
@@ -1547,7 +1365,6 @@ class MainActivity : GlassActivity() {
         updateHeroStats()
         updateAudioTag()
         updateReadyRow()
-        updateServiceChip()
         if (SessionCommands.stopping) {
             ctaButton.isEnabled = false
             heroStateText.text = "正在断开"
@@ -1593,13 +1410,7 @@ class MainActivity : GlassActivity() {
 
         when (s) {
             HeroState.IDLE -> {
-                val pending = pendingResidualDisplays
-                heroSubline.text =
-                    if (pending != null) {
-                        "上次会话异常退出，遗留 ${pending.size} 个虚拟屏待清理"
-                    } else {
-                        "与车机蓝牙完成配对后，点击下方按钮发起无线连接"
-                    }
+                heroSubline.text = "与车机蓝牙完成配对后，点击下方按钮发起无线连接"
                 styleCta(R.drawable.bg_phone_hero_action, R.color.phone_hero_action_text, R.drawable.ic_play, "启动连接")
                 audioTag.visibility = View.GONE
             }
@@ -1769,8 +1580,6 @@ class MainActivity : GlassActivity() {
     private fun updateReadyRow() {
         refreshSleepPolicy()
         val preparation = ConnectionPreflight.inspect(this, SessionController.audioEnabledForSession)
-        val shizukuState = ShellServiceGate.state(this)
-        updateServiceRow(shizukuState)
         val btGranted =
             ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) ==
                 PackageManager.PERMISSION_GRANTED
@@ -1836,7 +1645,7 @@ class MainActivity : GlassActivity() {
         } else {
             btnAudio.text = "授权"
             btnAudio.setAppearanceTextColor(R.color.m3_primary)
-            audioDesc.text = "内置服务优先采集 · 此处可申请兼容投屏授权"
+            audioDesc.text = "此处可申请兼容投屏授权"
         }
         val targetReady = preparation.checks.any { it.requirement == ConnectionPreflight.Requirement.TARGET && it.ready }
         if (!targetReady && btGranted) {
@@ -1860,8 +1669,8 @@ class MainActivity : GlassActivity() {
                     preparation.ready -> "启动连接"
                     else -> "检查连接环境"
                 }
-            ctaButton.isEnabled = !connectionCheckRunning && !startupCheckRunning
-            if (!connectionCheckRunning && !startupCheckRunning && pendingResidualDisplays == null) {
+            ctaButton.isEnabled = !connectionCheckRunning
+            if (!connectionCheckRunning) {
                 heroSubline.text =
                     if (preparation.ready) {
                         "连接环境已就绪，可以启动无线连接"
@@ -1870,21 +1679,6 @@ class MainActivity : GlassActivity() {
                     }
             }
         }
-    }
-
-    /** 刷新准备清单中的内置服务状态，未就绪时点击打开激活引导 */
-    private fun updateServiceRow(state: ShellServiceGate.State) {
-        val ready = state == ShellServiceGate.State.READY
-        PhonePanelUi.styleStatusBadge(shizukuBadge, ready)
-        shizukuBadge.text = if (ready) "就绪" else "未就绪"
-        shizukuDesc.text =
-            when (state) {
-                ShellServiceGate.State.READY -> "shell 权限已就绪 · 虚拟屏与触摸可用"
-                ShellServiceGate.State.STOPPED -> "尚未恢复——点此查看 WLAN 和无线调试要求"
-                ShellServiceGate.State.ACTIVATING -> "正在激活——点此查看进度"
-                ShellServiceGate.State.INPUT_UNAVAILABLE -> "权限服务在线——点此重新检查触控"
-                ShellServiceGate.State.NEEDS_PAIRING -> "尚未配对——点此完成首次激活"
-            }
     }
 
     // ---- 目标车机选择弹窗（扫描/配对状态）----
@@ -2442,49 +2236,12 @@ class MainActivity : GlassActivity() {
             Build.MODEL
         }
 
-    private fun updateServiceChip() {
-        val state = ShellServiceGate.state(this)
-        val ready = state == ShellServiceGate.State.READY
-        if (ready && !lastObservedServiceReady) ensureNotificationAccessAsync()
-        lastObservedServiceReady = ready
-        shizukuChip.text =
-            when (state) {
-                ShellServiceGate.State.READY -> "服务就绪"
-                ShellServiceGate.State.ACTIVATING -> "恢复中"
-                else -> "待激活"
-            }
-        shizukuChip.contentDescription = ShellServiceGate.guidanceOf(state).title
-        io.github.shaonialife.buicklinkplus.ui.AppearanceBindings.compoundTint(
-            shizukuChip,
-            if (ready) R.color.m3_ok_dot else R.color.m3_amber,
-        )
-        // 机型来自系统公开信息，不需要额外权限，连接条件仍由准备清单表达
-        val model =
-            Build.MODEL
-                .orEmpty()
-                .trim()
-                .ifEmpty { "Android 手机" }
-        val manufacturer = Build.MANUFACTURER.orEmpty().trim()
-        val device = if (manufacturer.isBlank() || model.startsWith(manufacturer, ignoreCase = true)) model else "$manufacturer $model"
-        deviceSubtitle.text = getString(R.string.phone_device_model, device, Build.VERSION.RELEASE)
-    }
-
     // ==================== 通用 UI 工具 ====================
 
     private fun log(message: String) {
         // 写入进程级缓冲（logcat + 文件 + 挂屏渲染均由 SessionController 统一处理）
         SessionController.appendLog(message)
     }
-
-    /** 诊断面板共用的 shell 调用，只能在后台执行 */
-    private fun shExec(
-        cmd: String,
-        timeoutMs: Long = 4_000L,
-    ): Shell.Result =
-        Shell
-            .exec(cmd, timeoutMs)
-
-    private fun sh(cmd: String): String = shExec(cmd).output
 
     /** 导出日志到下载目录并弹窗告知位置；默认导出本次启动日志，长按导出全部 */
     private fun exportLogFile(scope: LogExporter.Scope = LogExporter.Scope.CURRENT_SESSION) {
@@ -2691,282 +2448,6 @@ class MainActivity : GlassActivity() {
             }.also { mainHandler.postDelayed(it, durationMs) }
     }
 
-    /** 从 dumpsys display 解析 CarPlay 屏 ID 和名称，不能把 uniqueId 末尾代次当屏 ID */
-    private fun parseCarPlayDisplays(dump: String): List<Pair<Int, String>> =
-        (
-            Regex("displayId=(\\d+), uniqueId='[^'\\r\\n]*CarPlay(Dock|AppHi|App|Map)")
-                .findAll(dump)
-                .map { it.groupValues[1].toInt() to "CarPlay${it.groupValues[2]}" } +
-                // 系统遍历尚未更新触摸视口时，逻辑显示已存在，不能只凭视口为空放行
-                Regex("""DisplayInfo\{"CarPlay(Dock|AppHi|App|Map)[^"\r\n]*", displayId (\d+)[^\r\n]* type VIRTUAL,""")
-                    .findAll(dump)
-                    .map { it.groupValues[2].toInt() to "CarPlay${it.groupValues[1]}" }
-        ).distinctBy { it.first }.toList()
-
-    /** 读取 shell 全局状态（后台线程 + UI 回填）。[startupCheck] 时顺带做残留虚拟屏检测。 */
-    private fun refreshShellState(startupCheck: Boolean = false) {
-        if (startupCheck) {
-            startupCheckRunning = true
-            tickHero()
-        }
-        shellStateText.text = "读取中…"
-        Bg.run("shell-state") {
-            if (io.github.shaonialife.buicklinkplus.shizuku.EmbeddedServiceProvider.isRegistered) {
-                CarInputClient.awaitReady(applicationContext)
-            }
-            if (ShellServiceGate
-                    .state(this) !=
-                ShellServiceGate.State.READY
-            ) {
-                runOnUiThread {
-                    startupCheckRunning = false
-                    if (heroState == HeroState.IDLE) applyHeroState(HeroState.IDLE)
-                    shellStateText.setText(R.string.ui_shell_read_unavailable)
-                }
-                return@run
-            }
-
-            val letterbox =
-                Regex("Aspect ratio:\\s*([0-9.]+)")
-                    .find(sh("cmd window get-letterbox-style"))
-                    ?.groupValues
-                    ?.get(1) ?: "?"
-            val forceResizable = sh("settings get global force_resizable_activities").ifBlank { "null" }
-            val overlay = sh("settings get global overlay_display_devices").ifBlank { "null" }
-            val wmSize = sh("wm size").replace("\n", " / ").ifBlank { "?" }
-            val wmDensity = sh("wm density").replace("\n", " / ").ifBlank { "?" }
-            val carDisplays = parseCarPlayDisplays(sh("dumpsys display"))
-            val displays = carDisplays.joinToString(", ") { "${it.second}(${it.first})" }
-            val timeout = sh("settings get system screen_off_timeout").ifBlank { "?" }
-            val text =
-                buildString {
-                    appendLine("letterbox 宽高比: $letterbox  （1.05=会话调优生效；0.0=系统默认）")
-                    appendLine("force_resizable: $forceResizable  （平板模式实验；默认 null/0）")
-                    appendLine("overlay_display_devices: $overlay  （叠加屏实验残留；应为 null）")
-                    appendLine("wm size: $wmSize")
-                    appendLine("wm density: $wmDensity")
-                    appendLine("CarPlay 虚拟屏: " + displays.trim().replace("\n", ", ").ifEmpty { "无" })
-                    appendLine("screen_off_timeout: $timeout  （App 常亮功能管理）")
-                }
-            runOnUiThread { shellStateText.text = text.trim() }
-            if (startupCheck) {
-                var residual = carDisplays.filter { it.first !in currentSessionDisplayIds() }
-                if (residual.isNotEmpty()) {
-                    log(
-                        "SHELL: 启动检测到 ${residual.size} 个残留虚拟屏: " +
-                            residual.joinToString(", ") { "${it.second}(${it.first})" },
-                    )
-                    // 残留屏 = 上次会话异常退出（进程被杀）：横屏覆盖的会话末复原
-                    // 也没执行——一并清理，避免应用在手机侧残留横屏状态
-                    runCatching {
-                        val reset =
-                            AppOrientationCompat
-                                .resetAll(applicationContext)
-                        if (reset > 0) log("ORIENTATION: 残留会话的横屏覆盖已复原 $reset 个")
-                    }
-                    // 先清理残留屏，兼容迁移前独立服务进程持有的屏；跨进程屏须回收原持有进程
-                    val released = releaseDisplays(residual.map { it.first })
-                    log("SHELL: 启动残留自动清理（释放 $released/${residual.size}）")
-                    if (released > 0) {
-                        residual =
-                            parseCarPlayDisplays(sh("dumpsys display"))
-                                .filter { it.first !in currentSessionDisplayIds() }
-                    }
-                }
-                runOnUiThread {
-                    startupCheckRunning = false
-                    if (residual.isNotEmpty()) {
-                        // 用户「暂不」时保留 pending，状态旁的按钮可再次发起清理
-                        pendingResidualDisplays = residual
-                        updateResidualChip()
-                        if (heroState == HeroState.IDLE) applyHeroState(HeroState.IDLE)
-                        promptResidualDisplays(residual)
-                        // 自动展开日志卡：启动清理的两条记录直接可见（卡片默认折叠）
-                        findViewById<View>(R.id.logBody).visibility = View.VISIBLE
-                        findViewById<ImageView>(R.id.logChevron)
-                            .animate()
-                            .rotation(180f)
-                            .setDuration(250L)
-                            .start()
-                    } else if (heroState == HeroState.IDLE) {
-                        // 无残留：恢复「未连接」默认状态展示
-                        applyHeroState(HeroState.IDLE)
-                    }
-                }
-            }
-
-            // 后台预热输入服务；残留扫描必须先完成，避免旧屏提前消失后遗漏方向策略复原
-            CarInputClient.ensure(this)
-        }
-    }
-
-    /** 当前会话持有的虚拟屏（不参与残留清理）。 */
-    private fun currentSessionDisplayIds(): Set<Int> =
-        buildSet {
-            val launcher = VirtualLauncher
-            listOf(
-                launcher.dockDisplayId,
-                launcher.appDisplayId,
-                launcher.appHiDisplayId,
-                launcher.mapDisplayId,
-                launcher.gridDisplayId,
-            ).forEach { if (it >= 0) add(it) }
-        }
-
-    /** 服务恢复后补查残留屏，沿用原释放流程并回读确认 */
-    private fun prepareConnectionDisplays(): Boolean {
-        val owner = CarInputClient.service ?: return false
-        if (SessionController.isSessionRunning() || SessionController.sessionStarting.get()) return false
-        val before = Shell.exec("dumpsys display", 5_000L)
-        if (!before.ok || !before.output.contains("DISPLAY MANAGER")) {
-            log("PREFLIGHT: 显示状态读取失败，本次未启动蓝牙连接")
-            return false
-        }
-        if (CarInputClient.service !== owner || SessionController.isSessionRunning()) return false
-        val residual = parseCarPlayDisplays(before.output).filter { it.first !in currentSessionDisplayIds() }
-        if (residual.isNotEmpty()) {
-            log("PREFLIGHT: 连接前发现残留虚拟屏 ${residual.joinToString { it.first.toString() }}，开始清理并回读")
-            releaseDisplays(residual.map { it.first })
-        }
-        if (CarInputClient.service !== owner || SessionController.isSessionRunning()) return false
-        val after = if (residual.isEmpty()) before else Shell.exec("dumpsys display", 5_000L)
-        if (!after.ok || !after.output.contains("DISPLAY MANAGER") || CarInputClient.service !== owner) {
-            log("PREFLIGHT: 残留清理结果无法确认，本次未启动蓝牙连接")
-            return false
-        }
-        val remaining = parseCarPlayDisplays(after.output).filter { it.first !in currentSessionDisplayIds() }
-        if (remaining.isNotEmpty()) {
-            log("PREFLIGHT: 仍有残留虚拟屏 ${remaining.joinToString { it.first.toString() }}，本次未启动蓝牙连接")
-            runOnUiThread {
-                if (!isFinishing && !isDestroyed) {
-                    pendingResidualDisplays = remaining
-                    updateResidualChip()
-                }
-            }
-            return false
-        }
-        log("PREFLIGHT: 显示状态已回读，未发现非当前会话的 CarPlay 残留屏")
-        runOnUiThread {
-            if (!isFinishing && !isDestroyed) {
-                pendingResidualDisplays = null
-                updateResidualChip()
-            }
-        }
-        return true
-    }
-
-    /** 发现残留 CarPlay 虚拟屏时询问是否清理 */
-    private fun promptResidualDisplays(residual: List<Pair<Int, String>>) {
-        if (isFinishing || isDestroyed) return
-        val names = residual.joinToString("\n") { "· ${it.second}（displayId=${it.first}）" }
-        DarkMessageDialog.show(
-            activity = this,
-            title = "检测到残留虚拟屏",
-            message =
-                "发现 ${residual.size} 个上次会话遗留的 CarPlay 虚拟屏：\n$names\n\n" +
-                    "残留屏会持续占用显示资源，并可能影响下次连接。是否立即清理？",
-            actions =
-                listOf(
-                    DarkMessageDialog.Action("暂不") {},
-                    DarkMessageDialog.Action("清理", DarkMessageDialog.Emphasis.PRIMARY) {
-                        pendingResidualDisplays = null
-                        updateResidualChip()
-                        if (heroState == HeroState.IDLE) applyHeroState(HeroState.IDLE)
-                        Bg.run("residual-cleanup") {
-                            val released = releaseDisplays(residual.map { it.first })
-                            log("SHELL: 残留虚拟屏清理完成（释放 $released/${residual.size}）")
-                            runOnUiThread {
-                                snack("已释放 $released/${residual.size} 个残留屏")
-                                refreshShellState()
-                            }
-                        }
-                    },
-                ),
-            onCancel = {
-                // 返回键/点外部关闭 = 暂不：保留英雄卡的「清理残留屏」入口
-                updateResidualChip()
-            },
-        )
-    }
-
-    /** 英雄卡状态旁的「清理残留屏」按钮显隐（有待清理残留时出现）。 */
-    private fun updateResidualChip() {
-        btnResidualCleanup.visibility =
-            if (pendingResidualDisplays != null) View.VISIBLE else View.GONE
-    }
-
-    /** 释放指定虚拟屏（CarInputClient 懒绑定 + 3 秒短等）。后台线程调用，返回成功数。 */
-    private fun releaseDisplays(ids: List<Int>): Int {
-        if (ids.isEmpty()) return 0
-        var svc = CarInputClient.service
-        if (svc == null) {
-            CarInputClient
-                .ensure(this)
-            val deadline = SystemClock.uptimeMillis() + 3_000L
-            while (svc == null && SystemClock.uptimeMillis() < deadline) {
-                Thread.sleep(150)
-                svc = CarInputClient.service
-            }
-        }
-        val bound = svc ?: return 0
-        ids.forEach { runCatching { bound.releaseDisplay(it) } }
-        // 未直接释放的屏可能属于迁移前的旧服务进程，当前服务无法跨进程释放
-        // 回收旧进程让其随进程销毁释放，再以实际扫描结果复核（进程回收是异步的）。
-        CarInputClient.reapStaleUserServices()
-        val deadline = SystemClock.uptimeMillis() + 2_000L
-        while (true) {
-            val alive = parseCarPlayDisplays(sh("dumpsys display")).map { it.first }.toSet()
-            val gone = ids.count { it !in alive }
-            if (gone >= ids.size || SystemClock.uptimeMillis() >= deadline) return gone
-            Thread.sleep(200)
-        }
-    }
-
-    /** 一键把 shell 全局状态复位为系统默认值（含残留虚拟屏释放，保留当前会话屏）。 */
-    private fun resetShellState() {
-        shellStateText.text = "复位中…"
-        Bg.run("shell-reset") {
-            if (ShellServiceGate
-                    .state(this) !=
-                ShellServiceGate.State.READY
-            ) {
-                runOnUiThread { shellStateText.setText(R.string.ui_shell_reset_unavailable) }
-                return@run
-            }
-
-            fun sh(cmd: String) =
-                Shell
-                    .exec(cmd, 5_000L)
-            val steps =
-                listOf(
-                    "letterbox 宽高比" to "cmd window reset-letterbox-style aspectRatio",
-                    "overlay 叠加屏" to "settings delete global overlay_display_devices",
-                    "force_resizable" to "settings delete global force_resizable_activities",
-                    "wm size" to "wm size reset",
-                    "wm density" to "wm density reset",
-                )
-            val results =
-                steps.map { (name, cmd) ->
-                    val r = sh(cmd)
-                    if (r.ok) "✓ $name" else "✗ $name（${r.output.take(40)}）"
-                }
-            // 残留虚拟屏释放：保留当前会话的各屏，其余 CarPlay* 屏逐一释放
-            val ids =
-                parseCarPlayDisplays(sh("dumpsys display").output)
-                    .map { it.first }
-                    .filter { it !in currentSessionDisplayIds() }
-                    .toList()
-            val released = releaseDisplays(ids)
-            val summary = results.joinToString("；") + "；残留屏释放 $released/${ids.size}"
-            log("SHELL-RESET: $summary")
-            runOnUiThread {
-                shellStateText.text =
-                    getString(R.string.ui_shell_reset_result, results.joinToString("\n"), released.toString(), ids.size.toString())
-                refreshShellState()
-            }
-        }
-    }
-
     /** 悬浮窗权限请求：先弹说明弹窗，用户确认后再跳系统设置。 */
     private fun promptOverlayPermission(reason: String) {
         if (android.provider.Settings.canDrawOverlays(this)) return
@@ -3001,8 +2482,6 @@ class MainActivity : GlassActivity() {
     override fun onResume() {
         super.onResume()
         mainHandler.post(heroTick)
-        // 生命周期在 onResume 返回后才进入 RESUMED，下一次主线程调度再检查前台状态
-        mainHandler.post { restoreServiceOnAppOpen() }
         // 旋转/重建后尚未接受：用原截止时刻续弹（不重新等 10 秒）
         if (needsDisclaimerAtLaunch(
                 DisclaimerPrefs.acceptedVersion(this),
@@ -3011,37 +2490,6 @@ class MainActivity : GlassActivity() {
             activeDisclaimer?.isShowing != true
         ) {
             showDisclaimer(requireAcceptance = true)
-        }
-    }
-
-    /**
-     * 打开软件后复用已有配对自动恢复，离开前台或尚未接受使用说明时不发起
-     */
-    private fun restoreServiceOnAppOpen() {
-        if (automaticRestoreCheckRunning ||
-            isFinishing ||
-            isDestroyed ||
-            !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) ||
-            needsDisclaimerAtLaunch(DisclaimerPrefs.acceptedVersion(this), DisclaimerPrefs.CURRENT_VERSION)
-        ) {
-            return
-        }
-        automaticRestoreCheckRunning = true
-        val app = applicationContext
-        Bg.run("app-service-restore") {
-            val initialized =
-                runCatching {
-                    io.github.shaonialife.buicklinkplus.shizuku.EmbeddedAdb
-                        .initialize(app)
-                }.onFailure { log("SERVICE: 自动恢复读取身份失败 类型=${it.javaClass.simpleName}") }
-                    .isSuccess
-            runOnUiThread {
-                automaticRestoreCheckRunning = false
-                if (!initialized || isFinishing || isDestroyed || !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
-                    return@runOnUiThread
-                }
-                if (PairingService.restoreOnAppOpen(this)) log("SERVICE: 打开软件后自动恢复内置服务，无需再次点击激活")
-            }
         }
     }
 
@@ -3078,7 +2526,7 @@ class MainActivity : GlassActivity() {
         val detail = findViewById<android.widget.LinearLayout>(R.id.detailColumn)
         val density = resources.displayMetrics.density
         val gap = (12 * density).toInt()
-        // 窄屏将服务状态单独成行，短横屏减少重复说明并使用紧凑导航
+        // 窄屏两行标题，短横屏减少重复说明并使用紧凑导航
         val stackedHeader = !landscape && (resources.configuration.screenWidthDp < 360 || resources.configuration.fontScale >= 1.3f)
         val shortLandscape = landscape && resources.configuration.screenHeightDp < 400
         findViewById<View>(R.id.heroEyebrow).visibility = if (shortLandscape) View.GONE else View.VISIBLE
@@ -3088,11 +2536,6 @@ class MainActivity : GlassActivity() {
         findViewById<View>(R.id.phoneHeaderIcon).visibility = if (stackedHeader || shortLandscape) View.GONE else View.VISIBLE
         findViewById<View>(R.id.phoneBrand).layoutParams =
             LinearLayout.LayoutParams(if (stackedHeader) -1 else 0, -2, if (stackedHeader) 0f else 1f)
-        shizukuChip.layoutParams =
-            LinearLayout.LayoutParams(-2, -2).apply {
-                marginStart = if (stackedHeader) 0 else (8 * density).toInt()
-                topMargin = if (stackedHeader) (4 * density).toInt() else 0
-            }
         deviceSubtitle.visibility = if (shortLandscape) View.GONE else View.VISIBLE
         val navigation = findViewById<LinearLayout>(R.id.phoneBottomNavigation)
         val navPadding = ((if (shortLandscape) 0 else 4) * density).toInt()
@@ -3180,7 +2623,6 @@ class MainActivity : GlassActivity() {
         // 强制声明不得随 Activity 销毁残留窗口（旋转时 Activity 重建，onResume 会续弹）
         runCatching { activeDisclaimer?.dismiss() }
         activeDisclaimer = null
-        pendingServiceThenConnect = false
         pendingTargetPickerAfterPermission = false
         pendingProjectionAfterAudioPermission = false
         pendingStartAfterProjection.set(false)

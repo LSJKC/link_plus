@@ -1,17 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="phone_permissions_intro">完成连接准备，让后台运行更稳定</string>
-    <string name="phone_permissions_service_check">检查权限服务</string>
-    <string name="phone_permissions_shizuku_ready">内置服务已就绪</string>
-    <string name="phone_permissions_shizuku_missing">需要首次配对</string>
-    <string name="phone_permissions_shizuku_stopped">内置服务未启动</string>
-    <string name="phone_permissions_shizuku_unauthorized">内置服务激活中</string>
-    <string name="phone_permissions_service_ready">服务在线，本应用已获得授权</string>
-    <string name="phone_permissions_service_missing">开启开发者选项和无线调试，在本软件完成配对</string>
-    <string name="phone_permissions_service_stopped">已有配对时打开软件会自动恢复，尚未恢复请检查 WLAN 和无线调试</string>
-    <string name="phone_permissions_service_unauthorized">配对或激活正在进行，请稍候或进入页面取消</string>
-    <string name="phone_permissions_input_pending">触控服务待检查</string>
-    <string name="phone_permissions_input_retry">权限服务在线，返回首页点击重新检查即可，无需重新配对</string>
     <string name="phone_permissions_required">连接必备</string>
     <string name="phone_permissions_background">后台运行</string>
     <string name="phone_permissions_optional">可选功能</string>
@@ -61,8 +50,7 @@
     <string name="phone_permissions_request_pending">请先完成当前授权操作</string>
     <string name="phone_permissions_granted_result">授权结果已更新，请查看各项状态</string>
     <string name="phone_permissions_denied_result">部分权限未允许，可再次点击对应项目前往设置</string>
-    <string name="phone_permissions_guide_body">1. 开启开发者选项和无线调试，在本软件配对并激活服务，手机重启后需重新启动服务\n\n2. 授予本应用附近设备权限\n\n3. 开启手机蓝牙与 Wi-Fi，再到“车辆与连接”选择已配对车机\n\n4. 如需兼容暗屏，请允许悬浮窗；如需车机声音，请在可选功能中授权\n\n5. 检查本应用 的后台运行、自启动和电池优化设置</string>
-    <string name="phone_permissions_configure_shizuku">配置内置服务</string>
+    <string name="phone_permissions_guide_body">1. 授予本应用附近设备权限\n\n2. 开启手机蓝牙与 Wi-Fi，再到“车辆与连接”选择已配对车机\n\n3. 如需兼容暗屏，请允许悬浮窗；如需车机声音，请在可选功能中授权\n\n4. 检查本应用 的后台运行、自启动和电池优化设置</string>
     <string name="phone_permissions_configure_devices">设置设备权限</string>
     <string name="phone_permissions_done">知道了</string>
     <string name="phone_permissions_close">关闭</string>

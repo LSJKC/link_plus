@@ -1,12 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- 固定界面文案保持原样，百分号不参与格式替换 -->
-    <string name="ui_shizuku_checking" formatted="false">"内置服务状态检查中"</string>
-    <string name="ui_clear_stale_displays" formatted="false">"清理残留屏"</string>
     <string name="ui_quality_initial" formatted="false">"分辨率 100% · 30/30 fps"</string>
-    <string name="ui_shizuku_name" formatted="false">"内置服务"</string>
-    <string name="ui_checking_ellipsis" formatted="false">"检查中…"</string>
-    <string name="ui_checking" formatted="false">"检查中"</string>
     <string name="ui_compat_dim_optional" formatted="false">"兼容暗屏（可选）"</string>
     <string name="ui_compat_dim_description" formatted="false">"关闭：跟随系统真实息屏；开启：保持常亮并自动暗屏"</string>
     <string name="ui_screen_background_settings" formatted="false">"息屏与后台运行设置"</string>
@@ -83,9 +78,6 @@
     <string name="ui_ready_count">%1$s/%2$s</string>
     <string name="ui_selected_action">✓ %1$s</string>
     <string name="ui_scanning_found">继续扫描中…已发现 %1$s 台未配对设备</string>
-    <string name="ui_shell_read_unavailable">内置服务未就绪——shell 状态读取需要内置服务</string>
-    <string name="ui_shell_reset_unavailable">内置服务未就绪——shell 复位需要内置服务</string>
-    <string name="ui_shell_reset_result">复位结果：\n%1$s\n残留虚拟屏: 释放 %2$s/%3$s（保留当前会话屏）\n提示：letterbox 调优会在下次连接时自动重新应用</string>
     <string name="ui_audio_strategy_next_connection">当前设置：%1$s，下次连接生效</string>
     <string name="ui_percentage">%1$s%%</string>
     <string name="ui_saved_resolution">已保存分辨率：%1$s%%；下次连接生效</string>

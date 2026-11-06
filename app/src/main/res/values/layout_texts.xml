@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="ui_text_00bd3960fea8" formatted="false">"展开"</string>
-    <string name="ui_text_0160e9c16721" formatted="false">"Shell 全局状态"</string>
     <string name="ui_text_01eeb5549c2b" formatted="false">"复制日志"</string>
     <string name="ui_text_02712916dee9" formatted="false">"清除日志"</string>
     <string name="ui_text_062bb22ae1d0" formatted="false">"点击手机屏幕任意处恢复"</string>
@@ -21,7 +20,6 @@
     <string name="ui_text_473400815c0f" formatted="false">"声音"</string>
     <string name="ui_text_47dc9622ed59" formatted="false">"监听日志"</string>
     <string name="ui_text_572cf45ba436" formatted="false">"返回"</string>
-    <string name="ui_text_699a8f512e24" formatted="false">"(点「刷新」读取)"</string>
     <string name="ui_text_6b2d368cb4ec" formatted="false">"正在读取应用列表…"</string>
     <string name="ui_text_6cf2531ab111" formatted="false">"授权"</string>
     <string name="ui_text_6d9531c45921" formatted="false">"跳到底部"</string>
@@ -33,19 +31,14 @@
     <string name="ui_text_8da97ddda990" formatted="false">"开启"</string>
     <string name="ui_text_916afcd85322" formatted="false">"更换"</string>
     <string name="ui_text_953cf7bea5d3" formatted="false">"连接准备"</string>
-    <string name="ui_text_95ac0ce3b08b" formatted="false">"复位"</string>
     <string name="ui_text_9993504590b6" formatted="false">"dock 栏设置"</string>
     <string name="ui_text_a4dc401791ef" formatted="false">"默认地图"</string>
     <string name="ui_text_a508dadda912" formatted="false">"常亮"</string>
     <string name="ui_text_a7878110260a" formatted="false">"车机侧声音"</string>
-    <string name="ui_text_aee887434131" formatted="false">"刷新"</string>
-    <string name="ui_text_b64e99de1ba0" formatted="false">"letterbox / 虚拟屏 / wm 覆盖 —— 调试排查用"</string>
     <string name="ui_text_bbaa9f06378b" formatted="false">"壁纸"</string>
     <string name="ui_text_bed7d33f8fad" formatted="false">"管理桌面应用"</string>
     <string name="ui_text_c9a7470e4465" formatted="false">"设备检测中"</string>
-    <string name="ui_text_ccc0cfdf02e4" formatted="false">"复位默认"</string>
     <string name="ui_text_ced0f12524bb" formatted="false">"车机设置"</string>
-    <string name="ui_text_e2a76ef1f12e" formatted="false">"终端"</string>
     <string name="ui_text_e4f0a1550ede" formatted="false">"车机侧声音 · 开启"</string>
     <string name="ui_text_e567246c092d" formatted="false">"立即假息屏"</string>
     <string name="ui_text_e8e1835537c5" formatted="false">"假息屏"</string>

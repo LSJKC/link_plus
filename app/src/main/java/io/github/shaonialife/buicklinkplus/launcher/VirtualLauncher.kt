@@ -13,6 +13,9 @@ import android.view.Surface
 import androidx.core.content.edit
 import io.github.shaonialife.buicklinkplus.PhoneSettingsActivity
 import io.github.shaonialife.buicklinkplus.SettingsContentActivity
+import io.github.shaonialife.buicklinkplus.compat.CarInputClient
+import io.github.shaonialife.buicklinkplus.compat.Shell
+import io.github.shaonialife.buicklinkplus.compat.ShellServiceGate
 import io.github.shaonialife.buicklinkplus.launcher.settings.AppOrientationCompat
 import io.github.shaonialife.buicklinkplus.media.NotificationAccess
 import io.github.shaonialife.buicklinkplus.render.CARD_MARGIN_PX
@@ -24,9 +27,6 @@ import io.github.shaonialife.buicklinkplus.render.MapFrameMark
 import io.github.shaonialife.buicklinkplus.render.MapResizeCoordinator
 import io.github.shaonialife.buicklinkplus.render.OverlayCard
 import io.github.shaonialife.buicklinkplus.render.RuntimeDisplayGeometry
-import io.github.shaonialife.buicklinkplus.shizuku.CarInputClient
-import io.github.shaonialife.buicklinkplus.shizuku.Shell
-import io.github.shaonialife.buicklinkplus.shizuku.ShellServiceGate
 import io.github.shaonialife.buicklinkplus.ui.ScreenDimmer
 import io.github.shaonialife.buicklinkplus.util.Bg
 import io.github.shaonialife.buicklinkplus.util.shellQuote
@@ -231,8 +231,8 @@ object VirtualLauncher {
                 val target = readyMapTask ?: return "地图任务尚未确认，请先打开地图"
                 val component = readyMapComponent ?: return "地图任务尚未确认"
                 if (component.packageName == MapLaunchResolver.AMAP && amapCarPage) return "高德车载页面仅恢复原车载任务，不与手机普通导航同步"
-                val service = CarInputClient.service ?: return "输入服务未就绪，请重新绑定"
-                if (runCatching { service.capabilities() and 2 == 0 }.getOrDefault(true)) return "当前服务不支持地图交接，请重新激活内置服务"
+                val service = CarInputClient.service ?: return "输入服务已移除，地图交接不可用"
+                if (runCatching { service.capabilities() and 2 == 0 }.getOrDefault(true)) return "当前服务不支持地图交接，暂无可用输入服务"
                 val destination = if (toPhone) 0 else mapDisplayId
 
                 fun current() = mapHandoff.owns(operation) && composer === expected && mapDisplayId >= 0 && readyMapTask == target
@@ -1285,7 +1285,6 @@ object VirtualLauncher {
             log("LAUNCHER: dock=$dockOk grid=$gridOk gridDisplay=$gridDisplayId")
             // 桌面在超采样屏时默认活动屏 = 超采样屏（启动即显示桌面）
             if (appHiDisplayId >= 0) composer.requestActiveApp(true)
-            startInputHealer()
             // 暗幕组件就绪（常亮+暗幕功能；主界面开关控制启停）
             ScreenDimmer
                 .attach(context)
@@ -1345,7 +1344,6 @@ object VirtualLauncher {
             displaysViaService = false
         }
         appContextRef = null
-        watchdogActive = false
         // 还原 letterbox 宽高比为系统默认（不把会话调参留在系统里）
         windowPolicyExecutor.execute {
             runCatching { Shell.exec("cmd window reset-letterbox-style aspectRatio") }
@@ -2650,46 +2648,13 @@ object VirtualLauncher {
         }
     }
 
-    // ---- 内置服务自愈 ----
-
-    @Volatile
-    private var watchdogActive = false
-    private var watchdogThread: Thread? = null
-
     /** 诊断日志出口（由 MainActivity 接到文件日志）。 */
     @Volatile
     var logSink: ((String) -> Unit)? = null
 
-    /** 应用上下文（内置服务自愈需要）。 */
+    /** 应用上下文（诊断与回退链路需要）。 */
     @Volatile
     private var appContextRef: android.content.Context? = null
-
-    /** shell 在线但输入绑定缺失时，每 4 秒在后台重检；进程死亡后需用户重新激活 */
-    private fun startInputHealer() {
-        if (watchdogActive) return
-        watchdogActive = true
-        watchdogThread =
-            Thread({
-                while (watchdogActive && appDisplayId >= 0) {
-                    try {
-                        val ctx = appContextRef
-                        if (ctx != null && CarInputClient.service == null) {
-                            CarInputClient
-                                .ensure(ctx)
-                        }
-                    } catch (_: Exception) {
-                    }
-                    try {
-                        Thread.sleep(4000)
-                    } catch (_: InterruptedException) {
-                        break
-                    }
-                }
-            }, "input-service-healer").apply {
-                isDaemon = true
-                start()
-            }
-    }
 
     /** 设置虚拟屏忽略应用方向请求，写入 true 或 false 后读回确认 */
     private fun applyIgnoreOrientationRequest(vararg ids: Int) {

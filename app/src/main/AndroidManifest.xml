@@ -147,17 +147,5 @@
             android:launchMode="singleTop"
             android:excludeFromRecents="true"
             android:theme="@style/Theme.CarPlaySender.Settings" />
-
-        <activity android:name=".shizuku.ServiceActivationActivity" android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode" android:exported="false" />
-        <service android:name=".shizuku.PairingService" android:exported="false" android:foregroundServiceType="connectedDevice" />
-
-        <!-- 本应用的 shell 服务回传入口，运行时还校验 shell UID 和单次随机令牌 -->
-        <provider
-            android:name=".shizuku.EmbeddedServiceProvider"
-            android:authorities="${applicationId}.embedded-service"
-            android:multiprocess="false"
-            android:enabled="true"
-            android:exported="true"
-            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
     </application>
 </manifest>

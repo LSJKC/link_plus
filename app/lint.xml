@@ -4,11 +4,8 @@
     <issue id="AndroidGradlePluginVersion">
         <ignore path="../gradle/wrapper/gradle-wrapper.properties" />
     </issue>
-    <!-- 无线 ADB 使用本机地址、配对码 SPAKE2 与 ADB 密钥身份认证。
-         该库仅用于本机调试端口，不注册为默认 TLS 验证器；天气和歌词继续使用系统 HTTPS 验证 -->
+    <!-- 内置无线 ADB 激活已移除，libadb 依赖不再引入；bcpkix 的 EST 信任辅助实现未被本工程调用 -->
     <issue id="TrustAllX509TrustManager">
-        <ignore regexp=".*[/\\]transformed[/\\]libadb-android-3\.1\.1[/\\]jars[/\\]classes\.jar" />
-        <!-- JcaJceUtils 的 EST 信任辅助实现未被本工程调用，bcpkix 仅用于本机 ADB 证书构造 -->
         <ignore regexp=".*[/\\]org\.bouncycastle[/\\]bcpkix-jdk18on[/\\]1\.81\.1[/\\].*[/\\]bcpkix-jdk18on-1\.81\.1\.jar" />
     </issue>
 </lint>

@@ -3,8 +3,8 @@ package io.github.shaonialife.buicklinkplus.launcher.settings
 import android.content.Context
 import android.os.Build
 import androidx.core.content.edit
+import io.github.shaonialife.buicklinkplus.compat.Shell
 import io.github.shaonialife.buicklinkplus.launcher.VirtualLauncher
-import io.github.shaonialife.buicklinkplus.shizuku.Shell
 import io.github.shaonialife.buicklinkplus.util.RequestEpoch
 import io.github.shaonialife.buicklinkplus.util.shellQuote
 import java.util.concurrent.ConcurrentHashMap
@@ -89,7 +89,7 @@ object AppOrientationCompat {
         /** 当前目标的系统覆盖被拒绝，配置保留，不据此禁用其他应用 */
         UNSUPPORTED,
 
-        /** 临时失败（内置服务未就绪/超时/命令异常）——可重试。 */
+        /** 临时失败（shell 能力不可用/超时/命令异常）——可重试。 */
         FAILED,
     }
 
@@ -104,7 +104,7 @@ object AppOrientationCompat {
         val session = captureSession()
         val request = requestSequence.incrementAndGet()
         latestRequests[pkg] = request
-        // 先保存意愿，列表回收或退出页面不影响配置；未连接时不要求权限服务在线
+        // 先保存意愿，列表回收或退出页面不影响配置；未连接时不要求 shell 能力在线
         prefs(app).edit {
             putBoolean(key(pkg), enable)
         }
@@ -173,7 +173,7 @@ object AppOrientationCompat {
         return if (unsupported) WriteResult.UNSUPPORTED else WriteResult.FAILED
     }
 
-    /** 投屏布局仅使用已确认支持的能力，未知时等待权限恢复后重新检查 */
+    /** 投屏布局仅使用已确认支持的能力，未知时等待 shell 能力恢复后重新检查 */
     fun changeIdsRegistered(): Boolean = capability() == OrientationCapability.SUPPORTED
 
     /** 查询保留退出码，仅明确支持时缓存，权限错误可重试 */
@@ -252,7 +252,7 @@ object AppOrientationCompat {
         val capability = capability()
         if (capability != OrientationCapability.SUPPORTED) {
             diagSink?.invoke(
-                "ORIENTATION: " + (if (capability == OrientationCapability.UNKNOWN) "横屏能力尚未确认，权限恢复后可重试" else "当前平台缺少横屏兼容能力") +
+                "ORIENTATION: " + (if (capability == OrientationCapability.UNKNOWN) "横屏能力尚未确认，shell 能力恢复后可重试" else "当前平台缺少横屏兼容能力") +
                     "（名单 ${pkgs.size} 个应用，配置保留）",
             )
             return 0

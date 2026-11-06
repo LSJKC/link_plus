@@ -1,6 +1,7 @@
 package io.github.shaonialife.buicklinkplus.input
 
 import android.content.Context
+import io.github.shaonialife.buicklinkplus.compat.CarInputClient
 import io.github.shaonialife.buicklinkplus.input.TouchReports.Contact
 import io.github.shaonialife.buicklinkplus.launcher.CardGesture
 import io.github.shaonialife.buicklinkplus.launcher.LetterboxHintController
@@ -12,9 +13,8 @@ import io.github.shaonialife.buicklinkplus.render.DisplayGeometry
 import io.github.shaonialife.buicklinkplus.render.DualDisplayComposer
 import io.github.shaonialife.buicklinkplus.render.LeftWidgetColumn
 import io.github.shaonialife.buicklinkplus.render.MusicIsland
-import io.github.shaonialife.buicklinkplus.shizuku.CarInputClient
 
-/** 按提交画面的区域把车机触摸路由到 Dock、应用或地图虚拟屏，经 shell 服务注入 */
+/** 按提交画面的区域把车机触摸路由到 Dock、应用或地图虚拟屏；输入服务已随内置 ADB 激活移除，注入不可用时安全降级 */
 object TouchRouter {
     /** 诊断日志出口（由 MainActivity 接到文件日志）。 */
     @Volatile
@@ -210,18 +210,12 @@ object TouchRouter {
         val launcher = VirtualLauncher
         val dockW = launcher.dockWidthPx
         if (dockW <= 0 || launcher.appDisplayId < 0 || launcher.dockDisplayId < 0) return
-        var svc = CarInputClient.service
+        // 内置无线 ADB 激活已移除：输入服务恒不可用，只记录诊断并安全返回，不再触发重连
+        val svc = CarInputClient.service
         if (svc == null) {
-            // 主动触发重绑（手机重启/内置服务重启后 binder 丢失）
-            CarInputClient.ensure(context)
-            svc = CarInputClient.service
-        }
-        if (svc == null) {
-            failStreak++
-            diag(
-                "注入服务不可用（连续 $failStreak 次，自动重绑中；" +
-                    "若持续失效请返回本软件重新检查服务）",
-            )
+            if (failStreak++ == 0) {
+                diag("内置无线 ADB 激活已移除，触摸注入不可用（不再重试）")
+            }
             return
         }
         val binder = svc.asBinder()

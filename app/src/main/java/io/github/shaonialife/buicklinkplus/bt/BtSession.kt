@@ -64,7 +64,14 @@ internal fun Iap2LinkChannel.runSenderSession(
     }
 }
 
-/** 启动时强制重查蓝牙 MAC，跳过失败缓存，避免把占位地址发给车机 */
+/**
+ * 启动时强制重查蓝牙 MAC，跳过失败缓存。
+ *
+ * 无内置无线 ADB/shell 后，部分机型（Honor/MagicOS 等）把所有接口的蓝牙地址都脱敏，
+ * 软件侧拿不到真实值。此时不再抛异常中断会话，而是继续用占位值启动并明确提示：
+ * 车机会按真实地址校验 0x4300/0x4E0E 和 ctrl 广播 id，占位值可能导致不下发 0x4301；
+ * 用户可在手机设置里手填本机蓝牙地址（`settings` 偏好的 `bt_mac_override`）。
+ */
 private fun resolveBluetoothMac(
     context: Context,
     log: (String) -> Unit,
@@ -73,7 +80,10 @@ private fun resolveBluetoothMac(
     if (cached != null) return cached
     val mac = DeviceIdentity.bluetoothMac(context, forceRetry = true)
     if (mac == DeviceIdentity.PLACEHOLDER_MAC) {
-        throw IOException("未取得本机真实蓝牙身份，已阻止发送占位标识；请确认内置服务已启动并已授权")
+        log(
+            "BT: ⚠ 未能解析真实蓝牙 MAC（仍是占位值）——车机会校验 0x4300 的传输标识，" +
+                "占位值可能导致它不下发 0x4301；请在手机设置「连接与设备」里手填本机蓝牙地址",
+        )
     } else {
         log("BT: 本机蓝牙 MAC=$mac（0x4300/0x4E0E 与 ctrl 广播 TXT id 同源）")
     }

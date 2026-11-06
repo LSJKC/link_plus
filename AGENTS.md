@@ -8,12 +8,12 @@
 2. `reference/README.md`（CarPToCarL/carvex 最新快照）
 3. `README.md` / `docs/architecture.md`（上游结构）
 4. 旧工程只读参考：`F:\carplay\_newproj\hybrid63\inject\src`
+5. `docs/no-adb-model.md`（无内置 ADB 激活模型、权限边界与用户操作）
 
 硬约束：
 
 - 不修改闭源 APK，不做 smali 插桩；
-- 不引入 root/Shizuku；
-- 保留 link_plus 内置无线 ADB 激活方式；
+- 不保留内置无线 ADB 激活；不引入 root/Shizuku/ADB；只使用 Android 原生、无需 ADB 权限的能力；
 - 摄像头/麦克风/媒体权限按需申请；
 - 不硬编码 iAP2 file-transfer session 为 12；真车按 k1 动态取；
 - 不把歌词写进 iAP2（官方 0x5001 无歌词字段）；

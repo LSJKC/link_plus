@@ -26,10 +26,6 @@ class SenderApp : Application() {
         Bg.run("media-mute-recover") {
             MediaMuteController.recover(applicationContext) { DebugFileLog.append(this, it) }
         }
-        Bg.run("embedded-service-state") {
-            io.github.shaonialife.buicklinkplus.shizuku.EmbeddedAdb
-                .initialize(applicationContext)
-        }
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             Log.e(TAG, "未捕获异常（线程 ${thread.name}，已吞掉保进程）", throwable)

@@ -2,9 +2,9 @@ package io.github.shaonialife.buicklinkplus.launcher
 
 import android.content.Context
 import io.github.shaonialife.buicklinkplus.R
+import io.github.shaonialife.buicklinkplus.compat.Shell
 import io.github.shaonialife.buicklinkplus.launcher.settings.AppOrientationCompat
 import io.github.shaonialife.buicklinkplus.render.OverlayCard
-import io.github.shaonialife.buicklinkplus.shizuku.Shell
 import io.github.shaonialife.buicklinkplus.ui.UiAppearance
 import io.github.shaonialife.buicklinkplus.util.Bg
 

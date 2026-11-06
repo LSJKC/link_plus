@@ -15,7 +15,6 @@
     <color name="car_control_surface">#4D232C3E</color>
     <color name="m3_primary">#B9B5FF</color>
     <color name="m3_on_primary">#25205C</color>
-    <color name="m3_pri_container">#343954</color>
     <color name="m3_on_pri_container">#EEEDFF</color>
     <color name="glass_selected">#8C6A64FF</color>
 </resources>

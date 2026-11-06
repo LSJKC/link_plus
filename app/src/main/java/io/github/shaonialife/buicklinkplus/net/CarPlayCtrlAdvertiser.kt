@@ -133,12 +133,14 @@ class CarPlayCtrlAdvertiser(
         return try {
             val socket = ServerSocket(0)
             serverSocket = socket
-            // 占位 MAC 时强制重试一次（启动连接即发布广播时，内置服务可能还没就绪；
-            // 广播内容错了车机就永远不会邀请我们）
+            // 占位 MAC 时强制重试一次（多数机型 sysfs/Settings.Secure 可直读；
+            // 仍失败则提示用户手填；广播内容错了车机就永远不会邀请我们）
             var mac = DeviceIdentity.bluetoothMac(context)
             if (mac == DeviceIdentity.PLACEHOLDER_MAC) {
                 mac = DeviceIdentity.bluetoothMac(context, forceRetry = true)
-                log("$TAG: 蓝牙 MAC 解析为占位值，已强制重试${if (mac == DeviceIdentity.PLACEHOLDER_MAC) "（仍未成功——车机可能不会邀请，请确认内置服务已启动）" else "成功"}")
+                log(
+                    "$TAG: 蓝牙 MAC 解析为占位值，已强制重试${if (mac == DeviceIdentity.PLACEHOLDER_MAC) "（仍未成功——车机可能不会邀请，请在手机设置「连接与设备」里手填本机蓝牙地址）" else "成功"}",
+                )
             }
             val info =
                 NsdServiceInfo().apply {
@@ -164,7 +166,7 @@ class CarPlayCtrlAdvertiser(
                     if (mac == DeviceIdentity.PLACEHOLDER_MAC) "（⚠ 占位 MAC：车机不会邀请）" else "",
             )
             if (mac == DeviceIdentity.PLACEHOLDER_MAC) {
-                // 内置服务拿到真实 MAC 后重新注册，替换广播里的占位值
+                // 身份解析重试拿到真实 MAC 后重新注册，替换广播里的占位值
                 Bg.run("ctrl-mac-repair") { repairPlaceholderMac() }
             }
             Thread(::acceptLoop, "ctrl-accept").apply {
@@ -193,7 +195,7 @@ class CarPlayCtrlAdvertiser(
             ensureForNetwork(registeredSsid ?: "", force = true)
             return
         }
-        log("$TAG: 30s 内未能解析真实蓝牙 MAC——ctrl 广播 id 仍是占位值，车机可能不会邀请（请确认内置服务已启动）")
+        log("$TAG: 30s 内未能解析真实蓝牙 MAC——ctrl 广播 id 仍是占位值，车机可能不会邀请（请在手机设置「连接与设备」里手填本机蓝牙地址）")
     }
 
     private fun acceptLoop() {

@@ -7,9 +7,11 @@ plugins {
 
 /**
  * 版本名可以重置，版本码始终递增，保证覆盖安装
+ *
+ * carlife-port P1A：移除内置无线 ADB 激活 + CarLife H.264 直出，版本码递增到 153。
  */
-val appVersionName = "0.0.9"
-val appVersionCode = 152
+val appVersionName = "0.1.0"
+val appVersionCode = 153
 
 /**
  * 从根目录的 keystore.properties 读取签名，缺少时使用 debug 签名
@@ -61,7 +63,7 @@ android {
             signingConfig = signingConfigs.getByName(if (hasReleaseKeystore) "release" else "debug")
         }
         debug {
-            // debug 沿用正式包名，避免内置服务需要重新配对
+            // debug 沿用正式包名，保持与正式包一致的安装/数据行为
             versionNameSuffix = "-debug"
         }
         // buick 使用独立包名，方便与原版并存
@@ -117,10 +119,6 @@ dependencies {
     // AirPlay 配对和加密
     //noinspection GradleDependency,NewerVersionAvailable
     implementation("org.bouncycastle:bcprov-jdk18on:1.81.1")
-    // 通过本机无线 ADB 激活内置 shell 服务
-    implementation("com.github.MuntashirAkon:libadb-android:3.1.1") {
-        exclude(group = "org.bouncycastle", module = "bcprov-jdk15to18")
-    }
     //noinspection GradleDependency,NewerVersionAvailable
     implementation("org.conscrypt:conscrypt-android:2.8.0")
     //noinspection GradleDependency,NewerVersionAvailable

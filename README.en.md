@@ -1,8 +1,8 @@
 # Buick Link +
 
-An Android sender for compatible wireless CarPlay receivers. It streams application video and audio, and routes receiver touch input back to the phone. Android 12 or later is required; root is not required.
+An Android sender for compatible wireless CarPlay receivers. It streams phone CarLife+ video and audio, and routes receiver touch input back to CarLife. Android 12 or later is required; root, developer options, wireless debugging and ADB are not required.
 
-The receiver UI includes an app launcher, split-screen maps, music widgets, lyrics and weather. Third-party APKs are not bundled. Activate the built-in service through Android wireless debugging before connecting.
+The phone UI shows connection status and settings; the content source is CarLife+ on the phone. The original shell-dependent launcher, app launching and touch injection have been removed; see the [no-ADB model](docs/no-adb-model.md). Third-party APKs are not bundled.
 
 ## Build
 
@@ -17,7 +17,7 @@ The test APK uses the `.buick` suffix. Configure release signing with your own `
 
 Keeping a connection while the screen is off remains a known issue on Android 17. Compatibility also depends on the phone and receiver.
 
-See the [Chinese README](README.md), [architecture](docs/architecture.md), [third-party licenses](docs/dependencies.md) and [library rebuild instructions](docs/embedded-source-build.md).
+See the [Chinese README](README.md), [architecture](docs/architecture.md), [no-ADB model](docs/no-adb-model.md) and [third-party licenses](docs/dependencies.md).
 
 ## License
 

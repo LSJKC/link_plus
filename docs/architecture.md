@@ -4,7 +4,7 @@
 
 ## 连接怎么走
 
-蓝牙 iAP2 交换热点和端点信息，手机加入车机网络，再通过 mDNS 发现 AirPlay 服务。配对完成后，视频走 H.264，音频走 RTP，车机触摸通过内置 shell 服务送回虚拟屏。
+蓝牙 iAP2 交换热点和端点信息，手机加入车机网络，再通过 mDNS 发现 AirPlay 服务。配对完成后，视频走 H.264，音频走 RTP；车机触摸按 CarLife 触摸协议回传手机（不再依赖内置 shell 或虚拟屏）。
 
 ## 代码放在哪
 
@@ -17,7 +17,7 @@
 | render | 把虚拟屏合成为编码器画面 |
 | input | 触摸坐标换算和派发 |
 | video、audio | 编码、推流和音频反馈 |
-| service、shizuku | 内置无线 ADB、shell 服务和虚拟屏控制 |
+| service | 连接前台服务与会话生命周期（原 `shizuku` 内置无线 ADB 与 shell 服务已移除） |
 | media | 媒体状态、歌词和天气 |
 
 `SessionController` 管理整个连接，手机界面读取 `SessionSnapshot` 展示状态。取消或断开时先更新状态，再在后台释放资源；旧连接的回调不能改动新连接。

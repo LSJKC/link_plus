@@ -96,7 +96,7 @@ class DisclaimerContentTest {
         // 说明兼容限制、驾驶风险和系统权限
         assertTrue(text.contains("连接效果会受手机、Android 版本和车机系统影响"))
         assertTrue(text.contains("驾驶安全"))
-        assertTrue(text.contains("内置服务"))
+        assertTrue(text.contains("不需要开发者选项"))
         assertTrue(text.contains("无线调试"))
         // 非官方声明（避免被误认为与 Apple 有关联）
         assertTrue(text.contains("非官方"))

@@ -8,8 +8,6 @@
 | AndroidX core-ktx / AppCompat | 1.13.1 / 1.7.0 | Apache-2.0 |
 | ViewPager2 / RecyclerView | 1.1.0 / 1.3.2 | Apache-2.0 |
 | Bouncy Castle bcprov / bcpkix | 1.81.1 | MIT |
-| libadb-android | 3.1.1 | 本项目选用 Apache-2.0，附带代码的 BSD/MIT 声明一并保留 |
-| spake2-android / spake2-java | 2.2.1 | LGPL-3.0 |
 | Conscrypt Android | 2.8.0 | Apache-2.0，附 NOTICE 与 BoringSSL 许可 |
 | Ant Design Icons outlined | 7f2516ac91226d2b41f93b35cb5197c8d94f7189 | MIT |
 | JUnit | 4.13.2 | EPL-1.0，仅测试 |
@@ -24,12 +22,4 @@ APK 内的声明见 [embedded-third-party-notices.txt](../app/src/main/assets/em
 
 ## 对应源码
 
-源码放在工程根目录的 `third-party` 下，保留上游的许可、版权和构建文件。
-
-| 项目 | 对应提交 |
-| --- | --- |
-| [libadb-android](https://github.com/MuntashirAkon/libadb-android) | c849886ebc6d48e7b46d967e78a6bb65c90c3b74 |
-| [spake2-java](https://github.com/MuntashirAkon/spake2-java) | 7615ddd680b990e14513ebb66eac4cb0dbf82464 |
-| [spake2-c](https://github.com/MuntashirAkon/spake2-c) | 0d15933e5ba3e662cb01245a7ac0dc9fca3eac31 |
-
-修改和替换 SPAKE2 的步骤见 [对应源码与库替换](embedded-source-build.md)。发布 APK 时请同时提供对应源码和这些许可说明。
+本分支不保留内置无线 ADB 激活，`libadb-android` 与 SPAKE2（spake2-android / spake2-java / spake2-c）依赖及其对应源码已按用户要求移除，不再随本分支分发；如需历史版本源码或替换步骤，见仓库历史提交。发布 APK 时请提供实际使用组件的对应源码和许可说明。无 ADB 模型的说明见 [no-adb-model.md](no-adb-model.md)。
