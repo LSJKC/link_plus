@@ -1230,8 +1230,12 @@ class DisplayPanelFragment : SettingsPanelFragment() {
             val switch =
                 androidx.appcompat.widget.SwitchCompat(ctx).apply {
                     isChecked = checked
-                    thumbDrawable = androidx.core.content.ContextCompat.getDrawable(ctx, R.drawable.sw_thumb)
-                    trackDrawable = androidx.core.content.ContextCompat.getDrawable(ctx, R.drawable.sw_track)
+                    thumbDrawable =
+                        androidx.core.content.ContextCompat
+                            .getDrawable(ctx, R.drawable.sw_thumb)
+                    trackDrawable =
+                        androidx.core.content.ContextCompat
+                            .getDrawable(ctx, R.drawable.sw_track)
                 }
             switch.setOnCheckedChangeListener { _, value -> onChange(value) }
             card.addView(switch, LinearLayout.LayoutParams(-2, -2))

@@ -1073,6 +1073,7 @@ class MainActivity : GlassActivity() {
         findViewById<View>(R.id.btnCarSettings).visibility = View.GONE
         findViewById<View>(R.id.heroStats).visibility = View.GONE
     }
+
     /**
      * 底部导航只调整页面可见性，连接与授权状态继续由原宿主管理
      */

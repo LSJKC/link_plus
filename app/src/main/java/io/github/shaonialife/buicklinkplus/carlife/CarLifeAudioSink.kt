@@ -41,6 +41,10 @@ class CarLifeAudioSink(
     private val log: (String) -> Unit = {},
     private val senderProvider: () -> AudioSender?,
     private val dropWhenPaused: Boolean = true,
+    /** 媒体音源开关（设置「CarLife 音源」，默认开）。 */
+    private val mediaEnabled: () -> Boolean = { true },
+    /** TTS 导航播报开关（设置「TTS 导航播报」，默认开）。 */
+    private val ttsEnabled: () -> Boolean = { true },
 ) {
     // ---- 媒体 9240：源格式 ring + 跨包相位重采样 ----
 
@@ -220,6 +224,7 @@ class CarLifeAudioSink(
     ) {
         if (size <= 0 || size > pcm.size) return
         if (stoppedByOwner) return
+        if (!mediaEnabled()) return
         val now = SystemClock.uptimeMillis()
         lastMediaPcmAt = now
         // 音乐会话暂停后的一小段窗口内：丢弃引擎仍在推的残留 PCM（避免重复播放）。
@@ -337,6 +342,7 @@ class CarLifeAudioSink(
     ) {
         if (size <= 0 || size > pcm.size) return
         if (stoppedByOwner) return
+        if (!ttsEnabled()) return
         ensureStarted()
         synchronized(ttsLock) {
             ttsRing.write(pcm, 0, size)
@@ -516,9 +522,9 @@ class CarLifeAudioSink(
         val peakPercent = peakSinceReport * 100 / 32_768
         val nonZeroPercent = if (sampledSinceReport > 0) (nonZeroSinceReport * 100 / sampledSinceReport).toInt() else 0
         log(
-            "CARLIFE: 音频直通 ${packets} 包 / ${bytes / 1024}KB / ${kbps}kbps" +
-                " · 电平 ${peakPercent}%（非零 ${nonZeroPercent}%）" +
-                " · TTS 混入 ${ttsMixedFrames} 帧",
+            "CARLIFE: 音频直通 $packets 包 / ${bytes / 1024}KB / ${kbps}kbps" +
+                " · 电平 $peakPercent%（非零 $nonZeroPercent%）" +
+                " · TTS 混入 $ttsMixedFrames 帧",
         )
         lastReportAt = now
         packets = 0

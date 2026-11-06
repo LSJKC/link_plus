@@ -112,8 +112,7 @@ class CarLifeAudioPipe(
     }
 
     /** 诊断摘要（会话日志/导出用）。 */
-    fun stats(): String =
-        "1408B 包=$packets 静音包=$silencePackets 下游未接收=$droppedPackets 混入TTS帧=$mixedFrames"
+    fun stats(): String = "1408B 包=$packets 静音包=$silencePackets 下游未接收=$droppedPackets 混入TTS帧=$mixedFrames"
 
     /** 水泵主循环：预灌 → 绝对时间线实时发包。 */
     private fun writerLoop() {
@@ -189,11 +188,12 @@ class CarLifeAudioPipe(
             mixedFrames +=
                 runCatching { mixTts(packet, FRAMES_PER_CHUNK, sampleRate) }.getOrDefault(0)
         }
-        val written = try {
-            writePacket(packet, CHUNK_BYTES)
-        } catch (_: Throwable) {
-            false
-        }
+        val written =
+            try {
+                writePacket(packet, CHUNK_BYTES)
+            } catch (_: Throwable) {
+                false
+            }
         if (!written) {
             droppedPackets++
             log("CARLIFE-AUDIO: 下游写入失败（累计 $droppedPackets 包）——水泵停止")

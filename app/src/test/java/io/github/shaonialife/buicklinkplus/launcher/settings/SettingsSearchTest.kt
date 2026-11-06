@@ -1,11 +1,16 @@
 package io.github.shaonialife.buicklinkplus.launcher.settings
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 搜索匹配和稳定路由不能依赖菜单排列顺序
+ * 搜索匹配和稳定路由不能依赖菜单排列顺序。
+ *
+ * CarLife 成为唯一内容源后菜单收敛为六类页面（连接与设备/显示与画面/音频/CarLife/
+ * 外观与壁纸/日志与关于），旧 link_plus 桌面页（LAYOUT/MAP 等）已下线，不再可从
+ * [SettingsMenus.directPhonePanel] 直达。
  */
 class SettingsSearchTest {
     /**
@@ -14,20 +19,24 @@ class SettingsSearchTest {
     @Test fun commonTermsResolveToStablePanels() {
         assertEquals(SettingsMenus.DISPLAY, SettingsMenus.search("码率").single().target)
         assertEquals(SettingsMenus.DISPLAY, SettingsMenus.search(" FPS ").single().target)
-        assertEquals(SettingsMenus.CAR_APPEARANCE, SettingsMenus.search("天气 城市").single().target)
-        assertEquals(SettingsMenus.DASHBOARD_WIDGET, SettingsMenus.search("QQ 歌词").single().target)
+        assertEquals(SettingsMenus.DISPLAY, SettingsMenus.search("安全区 圆角").single().target)
+        assertEquals(SettingsMenus.AUDIO, SettingsMenus.search("TTS 播报").single().target)
+        assertEquals(SettingsMenus.CARLIFE, SettingsMenus.search("端口 自检").single().target)
+        assertEquals(SettingsMenus.CONNECTION, SettingsMenus.search("蓝牙 MAC").single().target)
+        assertEquals(SettingsMenus.APPEARANCE, SettingsMenus.search("内置壁纸").single().target)
+        assertEquals(SettingsMenus.ABOUT, SettingsMenus.search("日志 导出").single().target)
         assertTrue(SettingsMenus.search("无法匹配的词").isEmpty())
         assertTrue(SettingsMenus.search("  ").isEmpty())
     }
 
     /**
-     * 六个主分类和全部旧 ID 都有唯一可解析目标
+     * 六类页面顺序稳定，搜索目标都能解析到真实面板，旧桌面页不再可直达
      */
     @Test fun visibleCategoriesRetainLegacyTargets() {
-        assertEquals(listOf(105, 101, 100, 103, 104, 107), SettingsMenus.VISIBLE.map { it.id })
-        assertEquals(102, SettingsMenus.itemOf(SettingsMenus.LAYOUT).id)
-        assertEquals(106, SettingsMenus.itemOf(SettingsMenus.PERMISSIONS).id)
+        assertEquals(listOf(105, 5, 104, 9, 100, 107), SettingsMenus.VISIBLE.map { it.id })
+        assertEquals(SettingsMenus.PERMISSIONS, SettingsMenus.itemOf(SettingsMenus.PERMISSIONS).id)
         SettingsMenus.SEARCH.forEach { assertEquals(it.target, SettingsMenus.itemOf(it.target).id) }
-        assertEquals(SettingsMenus.DISPLAY, SettingsMenus.directPhonePanel(SettingsMenus.LAYOUT))
+        assertNull(SettingsMenus.directPhonePanel(SettingsMenus.LAYOUT))
+        assertNull(SettingsMenus.directPhonePanel(SettingsMenus.MAP))
     }
 }

@@ -195,6 +195,13 @@ class CarLifeHuClient(
      * 结构化数据源补上，两者最终都汇到 [CarLifeNav] 编 iAP2 `0x5201/0x5202`。
      */
     private val onNaviTurn: (CarLifeNav.NextTurn) -> Unit = {},
+    /**
+     * 媒体播放进度回调（`MD_MEDIA_PROGRESS` / 65590 的 u32 progressBar，单位 ms）。
+     *
+     * 供 iAP2 `0x5001 NowPlayingUpdate` 的 elapsed 字段使用；
+     * 标准接法是 [CarLifeNowPlaying.onMediaProgress]（由上层接线）。
+     */
+    private val onMediaProgress: (progressMs: Int) -> Unit = {},
 ) {
     private val running = AtomicBoolean(false)
     private val sockets = ConcurrentHashMap<Int, Socket>()
@@ -897,6 +904,7 @@ class CarLifeHuClient(
                 if (progressLog.allow("media-progress")) {
                     log("CARLIFE: 媒体进度 ${progress}ms（同类提示 10 秒最多一行）")
                 }
+                onMediaProgress(progress)
             }
 
             0x10030 -> {

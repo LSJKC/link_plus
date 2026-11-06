@@ -434,7 +434,7 @@ class CarLifeTouchSink(
             client.touchAction(CarLifeProtocol.TouchAction.UP, upX, upY)
             sentCount++
             val summary =
-                "双指手势结束（第二指移动 ${secondaryMoveCount} 次）→ 复合 UP($upX,$upY)" +
+                "双指手势结束（第二指移动 $secondaryMoveCount 次）→ 复合 UP($upX,$upY)" +
                     if (abnormal != null) " · $abnormal" else ""
             log("CARLIFE-TOUCH: $summary")
             multiActive = false

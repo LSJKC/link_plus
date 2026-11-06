@@ -346,6 +346,12 @@ internal object CarLifeProtocol {
         items += pbString(1, "CONNECT_TYPE") + pbVarint(2, connectType)
         items += pbString(1, "DISABLE_RESOLUTION_OPTION") + pbVarint(2, if (useVehicleResolution) 1 else 0)
         items += pbString(1, "MEDIA_LYRIC_SUPPORT") + pbVarint(2, if (mediaLyricSupport) 1 else 0)
+        // 实车日志（旧工程 vs 本工程）实证：这三个键决定引擎媒体 PCM 是否直接给 48K。
+        // 不配置时引擎按 44100 出，而 AirPlay 音频编码器按 48000，必须重采样、容易刺啦；
+        // 旧工程 2026-10-24 起带这 3 个键后真机媒体格式变为 48000Hz 2ch。
+        items += pbString(1, "MEDIA_SAMPLE_RATE") + pbVarint(2, 1)
+        items += pbString(1, "FOCUS_UI") + pbVarint(2, 1)
+        items += pbString(1, "VOICE_MIC") + pbVarint(2, 1)
         var list = ByteArray(0)
         for (item in items) list += pbBytes(2, item)
         val cnt = items.size

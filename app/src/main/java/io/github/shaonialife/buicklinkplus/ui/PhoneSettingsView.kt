@@ -107,7 +107,9 @@ class PhoneSettingsView(
                     "音源${if (carLifePrefs.audioEnabled(context)) "开" else "关"} · " +
                     "TTS${if (carLifePrefs.ttsEnabled(context)) "开" else "关"}",
                 SettingsMenus.CARLIFE to
-                    if (io.github.shaonialife.buicklinkplus.session.SessionController.isSessionRunning()) {
+                    if (io.github.shaonialife.buicklinkplus.session.SessionController
+                            .isSessionRunning()
+                    ) {
                         "会话进行中"
                     } else {
                         "尚未连接"

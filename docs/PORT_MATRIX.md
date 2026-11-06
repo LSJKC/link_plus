@@ -18,16 +18,27 @@
 
 **重要口径（2026-11-06 起）**：不再按阶段做“自测/逐阶段验收”。每个功能以“逻辑正确 + 可编译打包”为完成标准；全部功能就绪后一次性出实车测试包统一验证。
 
-## 0.0 实车测试包 v0.2.0（0.2.0 / versionCode 154）
+## 0.0 实车测试包 v0.2.1 / v0.2.0（0.2.1 / versionCode 155；v0.2.0 = 154）
 
-**已合入本包（已编译，待实车验证）**：视频直出 + P1B 合成（壁纸 cover + 安全区 contain + 圆角）、
-音频媒体 9240（48k stereo 1408B / 44.1k 相位重采样）、TTS 9241（独立 ring + duck/mix）、
-触摸 9340（安全区 contain 映射 + 单点/滑动/双指切换）、导航 iAP2（0x10030 → CarLifeNav →
+**v0.2.1 已合入本包（已编译，待实车验证）**：在 v0.2.0 基础上增加——
+媒体 NowPlaying（0x10035/进度 → iAP2 0x5001，album=0x0006、无歌词、按 0x5000 订阅筛选、AirPlay
+虚拟 iAP2 链路发送）、封面 artwork 测试版（768×768 JPEG 压缩/缓存/日志；k1 动态会话与
+0x001A transferID 待接真车 START 证据，本包不声明 field26）、HUD 广播入口
+（`carlife_show_hud_info`/`mix_notify_start_navi`/adb 调试 action）、车机语音键 → CarLife VR
+硬键（requestSiri 主通路 + HID Consumer 0xCF 兜底）、车机 GPS → 0x18010（Android Location 源，
+`carlife_use_car_gps` 开关）、P0 协议修复（98386 补 `MEDIA_SAMPLE_RATE/FOCUS_UI/VOICE_MIC`
+三键以拿到 48K 媒体 PCM；98311 补 saveArea 字段 4-7）、设置开关全接线（音频/TTS/导航/壁纸/
+安全区/圆角实时读取）、参考日志证据文档 `docs/reference-logs/`。
+
+**v0.2.0 已合入**：视频直出 + P1B 合成（壁纸 cover + 安全区 contain + 圆角）、音频媒体 9240
+（48k stereo 1408B / 44.1k 相位重采样）、TTS 9241（独立 ring + duck/mix）、触摸 9340
+（安全区 contain 映射 + 单点/滑动/双指切换）、导航 iAP2（0x10030 → CarLifeNav →
 `Iap2SenderSession` 0x5201/0x5202；AMap LinkSDK 可选源）、AirPlay 虚拟链路 0x5200 订阅注入、
-内置壁纸 9 张 + 壁纸选择、设置页收敛为六类、无内置无线 ADB 激活、APK 瘦身（26.9MB → 15.1MB）。
+内置壁纸 9 张 + 壁纸选择、设置页收敛为六类、无内置无线 ADB 激活、APK 瘦身（26.9MB → ~15MB）。
 
-**本包尚未包含（后续提交继续移植）**：媒体 NowPlaying 0x5001 发送（进行中）、封面 artwork
-file-transfer（进行中，测试版）、HUD 广播入口、车机语音键 → CarLife VR、车机 GPS → 0x18010。
+**仍待实车验证/后续补齐**：真实 k1 file-transfer 会话 + SETUP/START/DATA/SUCCESS（封面 field26）、
+HUD/GPS/语音键闭环证据（本车无原始数据）、触摸基准以合成器 pane 为准的实车微调、
+全量功能实车回归。
 
 **快照说明**：本表状态按**已提交基线 `cb5ddc3`** 统计。仓库工作区存在其他并行工作流的未提交移植（见 §0.1），尚未计入状态列；合入后请更新对应行的“当前状态”与“目标源码文件”。
 

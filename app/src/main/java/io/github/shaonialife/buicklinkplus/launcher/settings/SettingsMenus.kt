@@ -79,7 +79,7 @@ object SettingsMenus {
                 it.desc,
                 when (it.id) {
                     CONNECTION -> "蓝牙 WiFi 热点 车机 MAC 地址 网络"
-                    DISPLAY -> "清晰度 画质 分辨率 码率 帧率 安全区 圆角 壁纸背景"
+                    DISPLAY -> "清晰度 画质 分辨率 码率 帧率 安全区 圆角 壁纸背景 fps dpi"
                     AUDIO -> "声音 音源 TTS 导航播报 音量 通道"
                     CARLIFE -> "引擎 端口 自检 重连 诊断 7240 8240"
                     APPEARANCE -> "壁纸 背景 图片"

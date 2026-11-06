@@ -15,18 +15,22 @@ import io.github.shaonialife.buicklinkplus.bt.TargetDevicePrefs
 import io.github.shaonialife.buicklinkplus.capture.CarLifeScreenSource
 import io.github.shaonialife.buicklinkplus.capture.ScreenSource
 import io.github.shaonialife.buicklinkplus.carlife.CarLifeAudioSink
+import io.github.shaonialife.buicklinkplus.carlife.CarLifeGpsBridge
 import io.github.shaonialife.buicklinkplus.carlife.CarLifeNav
 import io.github.shaonialife.buicklinkplus.carlife.CarLifeNavAmap
+import io.github.shaonialife.buicklinkplus.carlife.CarLifeNowPlaying
 import io.github.shaonialife.buicklinkplus.compat.Shell
 import io.github.shaonialife.buicklinkplus.iap2.Iap2MessageIds
 import io.github.shaonialife.buicklinkplus.iap2.Iap2SenderSession
 import io.github.shaonialife.buicklinkplus.iap2.ReceiverProfile
 import io.github.shaonialife.buicklinkplus.input.CarLifeTouchSink
+import io.github.shaonialife.buicklinkplus.input.CarLifeVoiceKeyRouter
 import io.github.shaonialife.buicklinkplus.input.ConsumerKeys
 import io.github.shaonialife.buicklinkplus.input.TouchReports
 import io.github.shaonialife.buicklinkplus.input.TouchRouter
 import io.github.shaonialife.buicklinkplus.launcher.VirtualLauncher
 import io.github.shaonialife.buicklinkplus.launcher.settings.AppOrientationCompat
+import io.github.shaonialife.buicklinkplus.launcher.settings.CarLifePrefs
 import io.github.shaonialife.buicklinkplus.launcher.settings.DisplayPrefs
 import io.github.shaonialife.buicklinkplus.net.AirPlayFeatures
 import io.github.shaonialife.buicklinkplus.net.CarPlayCtrlAdvertiser
@@ -37,7 +41,9 @@ import io.github.shaonialife.buicklinkplus.net.WifiSavedNetworks
 import io.github.shaonialife.buicklinkplus.net.WifiStatus
 import io.github.shaonialife.buicklinkplus.net.compatHost
 import io.github.shaonialife.buicklinkplus.render.DisplayGeometry
+import io.github.shaonialife.buicklinkplus.render.PixelArea
 import io.github.shaonialife.buicklinkplus.service.CarPlayService
+import io.github.shaonialife.buicklinkplus.ui.CarLifeHudReceiver
 import io.github.shaonialife.buicklinkplus.ui.ScreenDimmer
 import io.github.shaonialife.buicklinkplus.util.Bg
 import io.github.shaonialife.buicklinkplus.util.DebugFileLog
@@ -177,13 +183,25 @@ object SessionController {
             CarLifeNav.submitHud(turn, remainMeters, totalMeters, road)
         }
         CarLifeNavAmap.onStop = { CarLifeNav.stop() }
+        // P5 媒体 NowPlaying：0x10035/进度 → iAP2 0x5001（AirPlay 虚拟链路订阅后发送）。
+        CarLifeNowPlaying.log = ::appendLog
+        // 辅助功能接线：语音键路由 + HUD 广播入口 + 车机 GPS 桥。
+        voiceKeyRouter = CarLifeVoiceKeyRouter(log = ::appendLog)
+        CarLifeHudReceiver.install(context.applicationContext)
+        runCatching {
+            val bridge = CarLifeGpsBridge(context.applicationContext, log = ::appendLog)
+            bridge.sink = { fix -> (currentScreenSource as? CarLifeScreenSource)?.sendCarGps(fix) == true }
+            gpsBridge = bridge
+        }.onFailure { appendLog("GPS: 车机 GPS 桥初始化失败 - ${it.message}") }
         Iap2SenderSession.activeListener = { active ->
             if (active == null) {
-                appendLog("NAV: iAP2 会话结束，停止导航数据源")
+                appendLog("NAV: iAP2 会话结束，停止导航/车机 GPS 数据源")
                 CarLifeNav.stop()
                 CarLifeNavAmap.stop()
+                gpsBridge?.stop()
             } else {
                 appendLog("NAV: iAP2 会话就绪（订阅=${active.navSubscribed} 组件=${active.navComponents}）")
+                gpsBridge?.start()
                 active.onRouteGuidanceStart = { components, mask ->
                     appendLog("NAV: 车机订阅 0x5200 components=$components mask=$mask → 启动 AMap 数据源")
                     appContext?.let { CarLifeNavAmap.start(it) }
@@ -306,6 +324,14 @@ object SessionController {
     // 仅持有 applicationContext 的会话资源；退出时停止并清理，不持有 Activity
     @android.annotation.SuppressLint("StaticFieldLeak")
     var currentScreenSource: ScreenSource? = null
+
+    /** 车机语音键 → CarLife 硬键（requestSiri / HID Consumer 0xCF）。 */
+    @Volatile
+    private var voiceKeyRouter: CarLifeVoiceKeyRouter? = null
+
+    /** 车机 GPS（Android Location）→ CarLife 0x18010；null = 尚未初始化。 */
+    @Volatile
+    private var gpsBridge: CarLifeGpsBridge? = null
 
     /** 当前会话的共享密钥与接收端地址：投影授权晚于连接时，动态补启音频用。 */
     @Volatile
@@ -588,6 +614,8 @@ object SessionController {
         audioSender = null
         currentSharedSecret = null
         currentAudioHost = null
+        voiceKeyRouter?.setSender(null)
+        gpsBridge?.stop()
         TouchRouter.clearCarLifeSink()
         TouchRouter
             .reset()
@@ -1186,6 +1214,11 @@ object SessionController {
         if (currentClient !== client || client.cancelled) return false
         if (!audioEnabledForSession) {
             appendLog("AUDIO: 本次连接未开启车机侧声音（「启动连接」弹窗选择）——仅推视频")
+            return false
+        }
+        // CarLife 音频设置：音源/TTS 都关闭时不必建立音频通道（省一条 AirPlay 流）。
+        if (context.applicationContext.let { !CarLifePrefs.audioEnabled(it) && !CarLifePrefs.ttsEnabled(it) }) {
+            appendLog("AUDIO: 设置里 CarLife 音源与 TTS 均关闭——跳过音频通道")
             return false
         }
         if (sharedSecret == null) {
@@ -1852,6 +1885,14 @@ object SessionController {
                             }
                             client.connectEventChannel(sessionKey, setup) { command ->
                                 when (command["type"]) {
+                                    "requestSiri" -> {
+                                        // 车机语音键：AirPlay requestSiri(1=预热/2=按下/3=松开) → CarLife VR 硬键
+                                        val params = command["params"] as? Map<*, *>
+                                        val action = (params?.get("siriAction") as? Number)?.toInt() ?: -1
+                                        val sent = voiceKeyRouter?.onVoiceAction(action) ?: 0
+                                        appendLog("EVENT: 车机语音键 requestSiri siriAction=$action → 下发 $sent 条 CarLife 硬键")
+                                    }
+
                                     "hidSendReport" -> {
                                         val uuid = command["uuid"]?.toString()
                                         val report = command["hidReport"] as? ByteArray
@@ -1887,6 +1928,8 @@ object SessionController {
                                                 null
                                             }
                                         if (consumerUsage != null) {
+                                            // 语音键兜底：HID Consumer 0xCF（Voice Command）也可触发 CarLife VR 硬键
+                                            voiceKeyRouter?.onConsumerUsage(consumerUsage)
                                             val keyCode = ConsumerKeys.keyCodeFor(consumerUsage)
                                             if (keyCode != 0) {
                                                 dispatchMediaKey(keyCode)
@@ -1904,8 +1947,9 @@ object SessionController {
                                             }
                                         } else if (keyMap != null && report != null) {
                                             // Consumer 设备的「无按键」/释放报文（值为 0 或下标越界）：
-                                            // 静默计数，避免释放事件刷屏
+                                            // 静默计数，避免释放事件刷屏；同时通知语音键路由释放。
                                             consumerReleaseCount++
+                                            voiceKeyRouter?.onConsumerUsage(null)
                                         } else if (contacts != null) {
                                             if (touchLogCount <= 30 || touchLogCount % 50 == 0) {
                                                 appendLog(
@@ -2057,7 +2101,7 @@ object SessionController {
                                                 check(currentClient === client && videoSender === startingVideo && !client.cancelled) {
                                                     "视频会话已退役"
                                                 }
-                                                val geometry =
+                                                val baseGeometry =
                                                     DisplayGeometry.create(
                                                         setup.displayWidth,
                                                         setup.displayHeight,
@@ -2068,6 +2112,31 @@ object SessionController {
                                                         viewArea = setup.viewArea,
                                                         outsideUiAllowed = setup.outsideUiAllowed,
                                                     )
+                                                // CarLife 设置里的安全区内收边距（dp → 画布 px）：合成器 contain 窗格与
+                                                // 触摸映射共用同一 geometry，避免壁纸区点击偏移。
+                                                val carLifeMarginPx =
+                                                    (
+                                                        CarLifePrefs.safeMargin(context.applicationContext) *
+                                                            context.resources.displayMetrics.density
+                                                    ).toInt()
+                                                val geometry =
+                                                    if (carLifeMarginPx > 0) {
+                                                        val c = baseGeometry.content
+                                                        val inset =
+                                                            PixelArea(
+                                                                c.left + carLifeMarginPx,
+                                                                c.top + carLifeMarginPx,
+                                                                c.right - carLifeMarginPx,
+                                                                c.bottom - carLifeMarginPx,
+                                                            )
+                                                        if (inset.width > 0 && inset.height > 0) {
+                                                            baseGeometry.copy(content = inset)
+                                                        } else {
+                                                            baseGeometry
+                                                        }
+                                                    } else {
+                                                        baseGeometry
+                                                    }
                                                 TouchRouter.setGeometry(geometry)
                                                 activeScalePercent = kotlin.math.round(profile.width * 100f / setup.displayWidth).toInt()
                                                 activeTargetFps = profile.fps
@@ -2085,17 +2154,28 @@ object SessionController {
                                                         log = { line -> appendLog(line) },
                                                     )
                                                 // P2 音频：CarLife 9240 媒体 / 9241 TTS PCM → AudioSender 外部 PCM
+                                                // 两个开关实时读取设置（媒体音源 / TTS 导航播报）。
                                                 carLifeSource.audioSink =
                                                     CarLifeAudioSink(
                                                         log = { line -> appendLog(line) },
                                                         senderProvider = { audioSender },
+                                                        mediaEnabled = { CarLifePrefs.audioEnabled(context.applicationContext) },
+                                                        ttsEnabled = { CarLifePrefs.ttsEnabled(context.applicationContext) },
                                                     )
                                                 // P3 触摸：车机触摸 → CarLife 9340（安全区 contain 坐标映射）
                                                 val carLifeTouch = CarLifeTouchSink(log = ::appendLog)
                                                 carLifeSource.touchSink = carLifeTouch
                                                 TouchRouter.setCarLifeSink(carLifeTouch)
-                                                // P4 导航：0x10030 → CarLifeNav 缓冲/去重 → iAP2 0x5201/0x5202
-                                                carLifeSource.navSink = { nextTurn -> CarLifeNav.submitNextTurn(nextTurn) }
+                                                // P4 导航：0x10030 → CarLifeNav → iAP2 0x5201/0x5202（可开关）
+                                                carLifeSource.navSink = { nextTurn ->
+                                                    if (CarLifePrefs.navEnabled(context.applicationContext)) {
+                                                        CarLifeNav.submitNextTurn(nextTurn)
+                                                    } else {
+                                                        0
+                                                    }
+                                                }
+                                                // 车机语音键（requestSiri/HID Consumer）→ CarLife VR 硬键
+                                                carLifeSource.voiceKeySink = voiceKeyRouter
                                                 val source: ScreenSource = carLifeSource
                                                 currentScreenSource = source
                                                 val ok =

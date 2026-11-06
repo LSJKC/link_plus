@@ -171,7 +171,7 @@ class CarLifeComposer(
             "CARLIFE-COMPOSER: fit source=${sourceWidth}x$sourceHeight " +
                 "canvas=${snapshot.canvasWidth}x${snapshot.canvasHeight} " +
                 "content=${content.width}x${content.height}@${content.left},${content.top} " +
-                "pane=${pane.width}x${pane.height}@${pane.left},${pane.top} radius=${cornerRadiusPx}",
+                "pane=${pane.width}x${pane.height}@${pane.left},${pane.top} radius=$cornerRadiusPx",
         )
         sceneDirty.set(true)
         wakeRenderer()
@@ -265,12 +265,11 @@ class CarLifeComposer(
         }
         inputSurfaceRef.set(null)
         surfaceTexture = null
-        if (thread != null) log("CARLIFE-COMPOSER: 已停止（合成 ${composedFrames} 帧）")
+        if (thread != null) log("CARLIFE-COMPOSER: 已停止（合成 $composedFrames 帧）")
     }
 
     /** 解码器输出 Surface（SurfaceTexture 生产端）；start 成功后有效，stop 后失效。 */
-    fun inputSurface(): Surface =
-        inputSurfaceRef.get() ?: throw IllegalStateException("CarLifeComposer 未启动或已停止，inputSurface 不可用")
+    fun inputSurface(): Surface = inputSurfaceRef.get() ?: throw IllegalStateException("CarLifeComposer 未启动或已停止，inputSurface 不可用")
 
     // ---- 布局/contain 计算 ----
 
@@ -438,7 +437,15 @@ class CarLifeComposer(
                 val v1 = 1f - v0
                 wallpaperCoords.position(0)
                 // 顶点顺序：左下、右下、左上、右上；Bitmap 第 0 行在上，因此顶部用 v0
-                wallpaperCoords.put(u0).put(v1).put(u1).put(v1).put(u0).put(v0).put(u1).put(v0)
+                wallpaperCoords
+                    .put(u0)
+                    .put(v1)
+                    .put(u1)
+                    .put(v1)
+                    .put(u0)
+                    .put(v0)
+                    .put(u1)
+                    .put(v0)
                 wallpaperCoords.position(0)
             }
 
@@ -505,8 +512,16 @@ class CarLifeComposer(
                 val top = 1f - layout.pane.top * scaleY / canvasHeight * 2f
                 val bottom = 1f - layout.pane.bottom * scaleY / canvasHeight * 2f
                 panePositions.position(0)
-                panePositions.put(left).put(bottom).put(right).put(bottom)
-                panePositions.put(left).put(top).put(right).put(top)
+                panePositions
+                    .put(left)
+                    .put(bottom)
+                    .put(right)
+                    .put(bottom)
+                panePositions
+                    .put(left)
+                    .put(top)
+                    .put(right)
+                    .put(top)
                 panePositions.position(0)
             }
 

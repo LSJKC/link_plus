@@ -6,13 +6,17 @@ package io.github.shaonialife.buicklinkplus.capture
 import android.content.Context
 import android.os.SystemClock
 import android.view.Surface
+import io.github.shaonialife.buicklinkplus.carlife.CarGpsFix
 import io.github.shaonialife.buicklinkplus.carlife.CarLifeAudioSink
 import io.github.shaonialife.buicklinkplus.carlife.CarLifeHuClient
 import io.github.shaonialife.buicklinkplus.carlife.CarLifeNav
+import io.github.shaonialife.buicklinkplus.carlife.CarLifeNowPlaying
 import io.github.shaonialife.buicklinkplus.carlife.CarLifeProtocol
 import io.github.shaonialife.buicklinkplus.carlife.CarLifeVideoDecoder
 import io.github.shaonialife.buicklinkplus.carlife.CarLifeVideoPipeline
 import io.github.shaonialife.buicklinkplus.input.CarLifeTouchSink
+import io.github.shaonialife.buicklinkplus.input.CarLifeVoiceKeyRouter
+import io.github.shaonialife.buicklinkplus.launcher.settings.CarLifePrefs
 import io.github.shaonialife.buicklinkplus.render.CarLifeComposer
 import io.github.shaonialife.buicklinkplus.render.CarLifeWallpaperSource
 import io.github.shaonialife.buicklinkplus.render.DisplayGeometry
@@ -107,6 +111,19 @@ class CarLifeScreenSource(
     var touchSink: CarLifeTouchSink? = null
 
     /**
+     * 可选语音键路由（P4 辅助）：车机 requestSiri / HID Consumer 0xCF → CarLife 硬键
+     * 0x68008（VR_START/VR_STOP）。握手成功后绑定客户端，断线/退役解绑。
+     */
+    @Volatile
+    var voiceKeySink: CarLifeVoiceKeyRouter? = null
+
+    /**
+     * 车机 GPS（可选）：把 Android Location 转出的 CarLife GpsFix 下发引擎 0x18010。
+     * 无会话/未连接时返回 false（调用方节流即可）。
+     */
+    fun sendCarGps(fix: CarGpsFix): Boolean = session?.client?.sendCarGps(fix) ?: false
+
+    /**
      * 可选导航出口（P4）：CarLife 0x10030 解析后的转向/距离快照。
      * 由 SessionController 接线到 [CarLifeNav.submitNextTurn]；null = 不处理导航。
      */
@@ -141,6 +158,8 @@ class CarLifeScreenSource(
                 height,
                 targetFps,
                 geometry,
+                wallpaperEnabled = CarLifePrefs.wallpaperEnabled(context),
+                cornerRadiusPx = CarLifePrefs.cornerRadius(context) * context.resources.displayMetrics.density,
                 noDecodeWatchdog = NoDecodeWatchdog(NO_DECODE_WARN_MS, NO_DECODE_WARN_INTERVAL_MS),
                 retiringLog = LogThrottle(RETIRING_LOG_INTERVAL_MS),
             )
@@ -149,9 +168,18 @@ class CarLifeScreenSource(
         newSession.composer =
             CarLifeComposer(surface, log = { line -> log(line) }).apply {
                 this.targetFps = targetFps
+                this.cornerRadiusPx = newSession.cornerRadiusPx
                 updateLayout(geometry, width, height)
             }
-        log("CARLIFE-COMPOSER: 合成器待启动（壁纸+安全区 contain+圆角；失败回退直出）")
+        log(
+            "CARLIFE-COMPOSER: 待启动（壁纸=" +
+                if (newSession.wallpaperEnabled) {
+                    "开"
+                } else {
+                    "关" +
+                        " 圆角=${newSession.cornerRadiusPx}px；失败回退直出）"
+                },
+        )
         newSession.pipeline =
             CarLifeVideoPipeline(
                 object : CarLifeVideoPipeline.Listener {
@@ -194,6 +222,7 @@ class CarLifeScreenSource(
         // 先停客户端以解除 socket 读写阻塞，管理线程才能尽快退出。
         val client = doomed.client
         doomed.client = null
+        CarLifeNowPlaying.onCarLifeDisconnected()
         try {
             client?.stop()
         } catch (error: Exception) {
@@ -315,10 +344,19 @@ class CarLifeScreenSource(
                         if (isCurrent(session)) audioSink?.writeTts(pcm, size)
                     },
                     onAudioGate = { active ->
-                        if (isCurrent(session)) audioSink?.setAudioGate(active)
+                        if (isCurrent(session)) {
+                            audioSink?.setAudioGate(active)
+                            CarLifeNowPlaying.onAudioGate(active)
+                        }
                     },
                     // 音频沉默看门狗（9240 长时间零 PCM 才重连）的「应该有声音」判据。
                     audioExpected = { isCurrent(session) && audioSink?.isAudioExpected() == true },
+                    // P5 媒体 NowPlaying：0x10035 媒体信息 / MD_MEDIA_PROGRESS → iAP2 0x5001。
+                    // 发送链路为 AirPlay 虚拟 iAP2 链路（车机 0x5000 订阅后按属性表发送）。
+                    onMediaInfo = { info -> if (isCurrent(session)) CarLifeNowPlaying.onMediaInfo(info) },
+                    onMediaProgress = { progress -> if (isCurrent(session)) CarLifeNowPlaying.onMediaProgress(progress) },
+                    // 本车 98311 安全区字段 [宽,高,x,y]：用当前画布几何 content（申请画布坐标系）。
+                    saveArea = saveAreaOf(session.geometry),
                     requestedFps = session.fps,
                     initialWidth = session.width,
                     initialHeight = session.height,
@@ -363,6 +401,7 @@ class CarLifeScreenSource(
             session.lastFrameAt = SystemClock.uptimeMillis()
             // P3：客户端已握手 → 触摸 sink 可下发 9340（未连接时保持解绑）。
             touchSink?.setSender(client)
+            voiceKeySink?.setSender(client)
             // 解码进度看门狗基线：以本轮连接时的累计解码帧为起点，避免把上一轮进度算进来。
             val framesAtConnect = session.framesReceived
             session.noDecodeWatchdog.reset(deliveredFrames)
@@ -412,6 +451,8 @@ class CarLifeScreenSource(
             client.stop()
             session.client = null
             touchSink?.setSender(null)
+            voiceKeySink?.setSender(null)
+            CarLifeNowPlaying.onCarLifeDisconnected()
             teardownDecoder(session)
             pipeline.reset()
             // 音频：清掉上一轮排队的 PCM/TTS 残留，等待新连接重新宣告格式（水泵保持运行）。
@@ -452,6 +493,10 @@ class CarLifeScreenSource(
                 "content=${session.geometry.content} radius=${composer.cornerRadiusPx}",
         )
         // 壁纸：用户当前壁纸按画布 cover 预合成；加载失败由合成器回退纯色底。
+        if (!session.wallpaperEnabled) {
+            logForSession(session, "CARLIFE-COMPOSER: 壁纸背景已关闭，使用纯色底")
+            return
+        }
         val wallpaper = CarLifeWallpaperSource(context, log = { line -> logForSession(session, line) })
         session.wallpaperSource = wallpaper
         wallpaper.start(session.width, session.height) { bitmap -> composer.setWallpaper(bitmap) }
@@ -688,6 +733,16 @@ class CarLifeScreenSource(
 
     private fun isCurrent(session: Session): Boolean = this.session === session
 
+    /**
+     * 98311 安全区字段 [宽, 高, x, y]：几何 content 已是「申请画布」坐标系，
+     * 与 initialWidth/Height（申请画布尺寸）同一空间，引擎按它做厂商适配。
+     */
+    private fun saveAreaOf(geometry: DisplayGeometry): IntArray? {
+        val content = geometry.content
+        if (content.width <= 0 || content.height <= 0) return null
+        return intArrayOf(content.width, content.height, content.left, content.top)
+    }
+
     private fun setEngineConnected(
         session: Session,
         connected: Boolean,
@@ -814,6 +869,10 @@ class CarLifeScreenSource(
         val fps: Int,
         /** 会话显示几何（画布/安全区 content rect），合成器布局与触摸映射共用。 */
         val geometry: DisplayGeometry,
+        /** 设置「壁纸背景」开关（false = 合成器纯色底）。 */
+        val wallpaperEnabled: Boolean,
+        /** 设置「画面圆角」半径（画布 px，0 = 直角）。 */
+        val cornerRadiusPx: Float,
         /** 持续收帧但无解码输出的看门狗状态机（纯逻辑，可 JVM 单测）。 */
         val noDecodeWatchdog: NoDecodeWatchdog,
         /** 退休门推迟日志限流（旧解码线程长时间不退时避免每 1s 刷一行）。 */

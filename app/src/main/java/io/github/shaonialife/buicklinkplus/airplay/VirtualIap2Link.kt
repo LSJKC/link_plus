@@ -17,6 +17,18 @@ import java.util.UUID
 private const val STOP_ROUTE_GUIDANCE_UPDATES = 0x5203
 
 /**
+ * 车机 0x5000 StartNowPlayingUpdates 订阅的属性筛选表（组参数解析结果）。
+ *
+ * 组 0 = 媒体项属性 ID、组 1 = 播放属性 ID（组 1 的 0x11 带 U32 值，不影响筛选集合）、
+ * 组 2 = info mask 位。`CarLifeNowPlaying` 按这张表只发被选中的 0x5001 字段。
+ */
+data class NowPlayingSubscription(
+    val mediaAttributes: Set<Int>,
+    val playbackAttributes: Set<Int>,
+    val infoMask: Int,
+)
+
+/**
  * AirPlay 上的虚拟 iAP2 链路，按接收端分流
  * DiPlay 通过 type-130 TCP 发送，协商采用回显优先
  * MIB3 通过控制通道 POST 发送，屏幕 SETUP 后发 DETECT，等待 SYN 再回 SYN|ACK
@@ -94,6 +106,19 @@ class VirtualIap2Link(
 
     /** 未处理的控制消息计数，供排查媒体键使用 */
     private var unknownCsmIds = 0
+
+    /** 车机是否已订阅 0x5001 NowPlaying 更新（收到 0x5000 置位；0x5002 / 链路退役清空）。 */
+    @Volatile
+    var nowPlayingSubscribed: Boolean = false
+        private set
+
+    /** 最近一次 0x5000 订阅的属性筛选表；null = 未订阅或订阅不带筛选（按全字段发送）。 */
+    @Volatile
+    var nowPlayingSelection: NowPlayingSubscription? = null
+        private set
+
+    private var nowPlayingSubscriptionDirty = false
+    private var nowPlayingInfoFrames = 0
 
     /** 上次已记录的链路状态，避免重复日志 */
     private var lastLinkState = Iap2LinkEngine.State.IDLE
@@ -215,6 +240,7 @@ class VirtualIap2Link(
         synchronized(lock) {
             if (closed || started) return
             started = true
+            activeLink = this
             engine.enterNegotiating()
         }
     }
@@ -231,6 +257,35 @@ class VirtualIap2Link(
             mib3Armed = true
             sendControlIap(Iap2LinkEngine.MARKER)
             log("IAPLINK: MIB3 detect 已发（控制通道 iAPSendMessage）——等待车机 SYN")
+        }
+    }
+
+    /**
+     * 发 0x5001 NowPlayingUpdate（参数体由
+     * [io.github.shaonialife.buicklinkplus.carlife.CarLifeNowPlaying.encodeBody] 编码，不含 CSM 帧头）。
+     *
+     * 只应在车机发过 0x5000 订阅后调用（[nowPlayingSubscribed]）；返回 false = 没发
+     * （链路未就绪 / 未 NORMAL / 引擎拒收）。发送不阻塞，立即尝试冲刷一次。
+     */
+    fun sendNowPlaying(body: ByteArray): Boolean {
+        if (body.isEmpty()) {
+            log("NOWPLAYING: 空载荷，不发 0x5001")
+            return false
+        }
+        synchronized(lock) {
+            if (closed || !started) {
+                log("NOWPLAYING: 链路未就绪，丢弃 0x5001（${body.size}B）")
+                return false
+            }
+            if (engine.state != Iap2LinkEngine.State.NORMAL) {
+                log("NOWPLAYING: 链路未 NORMAL（${engine.state}），丢弃 0x5001（${body.size}B）")
+                return false
+            }
+            val frame = Iap2Csm.encode(Iap2MessageIds.NOW_PLAYING_UPDATE, body)
+            val ok = engine.sendControl(frame, nowMillis())
+            if (ok) drainLocked()
+            log("NOWPLAYING: tx 0x5001 ${body.size}B ok=$ok")
+            return ok
         }
     }
 
@@ -355,6 +410,15 @@ class VirtualIap2Link(
             controlGeneration++
             engine.feedEof()
             engine.takeOutput()
+            val wasSubscribed = nowPlayingSubscribed
+            nowPlayingSubscribed = false
+            nowPlayingSelection = null
+            nowPlayingSubscriptionDirty = false
+            if (activeLink === this) activeLink = null
+            if (wasSubscribed) {
+                log("NOWPLAYING: 虚拟链路退役，NowPlaying 订阅清空")
+                onNowPlayingSubscription?.invoke(false)
+            }
         }
         pacer.interrupt()
     }
@@ -601,6 +665,92 @@ class VirtualIap2Link(
     }
 
     /**
+     * 解析 0x5000 StartNowPlayingUpdates 的订阅属性表（组参数）。
+     *
+     * 组 0/1 的子参数（空值）是属性 ID；组 1 的 `0x11` 是 U32 例外（startIndexOverride）；
+     * 组 2 的子参数 ID 作 info mask 位（本端限 0..31）；参数 ≥3 忽略。任何长度/嵌套非法
+     * 返回 null，调用方按固件语义整条忽略、不改已有订阅状态。
+     */
+    private fun parseNowPlayingSelection(frame: Iap2Csm.Frame): NowPlayingSubscription? {
+        val media = LinkedHashSet<Int>()
+        val playback = LinkedHashSet<Int>()
+        var infoMask = 0
+        return try {
+            for (param in Iap2Csm.parseParams(frame.body)) {
+                when (param.id) {
+                    0 -> {
+                        for (child in Iap2Csm.parseParams(param.value)) {
+                            if (child.value.isNotEmpty()) return null
+                            media += child.id
+                        }
+                    }
+
+                    1 -> {
+                        for (child in Iap2Csm.parseParams(param.value)) {
+                            if (child.id == 0x11) {
+                                if (child.value.size != 4) return null
+                            } else if (child.value.isNotEmpty()) {
+                                return null
+                            }
+                            playback += child.id
+                        }
+                    }
+
+                    2 -> {
+                        for (child in Iap2Csm.parseParams(param.value)) {
+                            if (child.value.isNotEmpty() || child.id !in 0..31) return null
+                            infoMask = infoMask or (1 shl child.id)
+                        }
+                    }
+
+                    else -> Unit
+                }
+            }
+            NowPlayingSubscription(media, playback, infoMask)
+        } catch (_: RuntimeException) {
+            null
+        }
+    }
+
+    /**
+     * 处理 0x5000/0x5002：只更新订阅状态并打日志，数据源回调延迟到 MIB3 空态初始化帧入队后
+     * （[notifyNowPlayingSubscriptionIfDirty]），保证车机先收到空态再收到真实数据。
+     */
+    private fun handleNowPlayingSubscriptionLocked(frame: Iap2Csm.Frame) {
+        if (frame.messageId == Iap2MessageIds.STOP_NOW_PLAYING_UPDATES) {
+            val wasSubscribed = nowPlayingSubscribed
+            nowPlayingSubscribed = false
+            nowPlayingSelection = null
+            nowPlayingSubscriptionDirty = wasSubscribed
+            log("NOWPLAYING: 车机退订 0x5002（${frame.body.size}B）")
+            return
+        }
+        val selection = parseNowPlayingSelection(frame)
+        if (selection == null) {
+            log("NOWPLAYING: 0x5000 订阅参数非法，整条忽略（保持原订阅状态）")
+            return
+        }
+        nowPlayingSubscribed = true
+        nowPlayingSelection = selection
+        nowPlayingSubscriptionDirty = true
+        log(
+            "NOWPLAYING: 车机订阅 0x5000（${frame.body.size}B）media=" +
+                selection.mediaAttributes.joinToString(",") { "0x%02x".format(it) } +
+                " playback=" + selection.playbackAttributes.joinToString(",") { "0x%02x".format(it) } +
+                " infoMask=0x${selection.infoMask.toString(16)}",
+        )
+    }
+
+    /** 订阅状态变更只在空态初始化帧入队后通知数据源；无变化不回调。 */
+    private fun notifyNowPlayingSubscriptionIfDirty() {
+        if (!nowPlayingSubscriptionDirty) return
+        nowPlayingSubscriptionDirty = false
+        val subscribed = nowPlayingSubscribed
+        log("NOWPLAYING: 订阅状态=$subscribed → 通知数据源")
+        onNowPlayingSubscription?.invoke(subscribed)
+    }
+
+    /**
      * 处理隧道和 MIB3 的身份识别、MFi 认证及订阅
      * 0x1D01 → 0x1D02 + 0xAA00，0xAA06 → 0xAA00，0xAA01 → 0xAA02，0xAA03 → 0xAA05
      * MIB3 订阅返回对应空态；0xEA02、0xA101 和 0xFFFB 只由链路层 ACK
@@ -614,10 +764,21 @@ class VirtualIap2Link(
         ) {
             forwardRouteGuidanceSubscription(frame)
         }
+        // P5 媒体：0x5000/0x5002 的订阅状态对所有链路形态都记录（真车从 AirPlay 虚拟链路进来），
+        // 数据源通知推迟到 MIB3 空态初始化帧入队之后，避免真实数据被空态覆盖。
+        val nowPlayingSubscriptionFrame =
+            frame.messageId == Iap2MessageIds.START_NOW_PLAYING_UPDATES ||
+                frame.messageId == Iap2MessageIds.STOP_NOW_PLAYING_UPDATES
+        if (nowPlayingSubscriptionFrame) {
+            handleNowPlayingSubscriptionLocked(frame)
+        }
         val onTunnel = tunnelWriter() != null
         // 车机发起方形态复用 MIB3 那套识别/MFi 骨架（出站同样走控制通道）
         val mib3 = (mib3Armed || eventLinkArmed) && !onTunnel
-        if (!onTunnel && !mib3) return
+        if (!onTunnel && !mib3) {
+            notifyNowPlayingSubscriptionIfDirty()
+            return
+        }
         val ids = Iap2MessageIds
         when (frame.messageId) {
             ids.IDENTIFICATION_INFORMATION -> {
@@ -754,11 +915,25 @@ class VirtualIap2Link(
             }
 
             Iap2MessageIds.START_NOW_PLAYING_UPDATES -> {
-                if (!mib3) return
-                sendRawCsmLocked(MIB3_NOW_PLAYING_UPDATE_IDLE)
-                // 仪表盘歌词/媒体卡的数据通路（0x5001 + file-transfer 封面）后续接
-                // MediaSessionsState——空态应答是 MIB3 存活的前置，先落这版。
-                log("IAPLINK: MIB3 0x5000 → 0x5001（空态）——仪表盘媒体数据待接")
+                if (mib3) {
+                    // 空态初始化帧先入队（等价真实 iPhone 的 initial defaults），真实数据由
+                    // CarLifeNowPlaying 在订阅回调里发，顺序保持「先空态、后真实」。
+                    sendRawCsmLocked(MIB3_NOW_PLAYING_UPDATE_IDLE)
+                    log("IAPLINK: MIB3 0x5000 → 0x5001（空态初始化）")
+                }
+                notifyNowPlayingSubscriptionIfDirty()
+            }
+
+            Iap2MessageIds.STOP_NOW_PLAYING_UPDATES -> {
+                notifyNowPlayingSubscriptionIfDirty()
+            }
+
+            Iap2MessageIds.SET_PLAYBACK_INFO -> {
+                // 车机回报播放位置/队列窗口；CarLife 源没有队列，只记前几帧（避免刷屏）。
+                if (nowPlayingInfoFrames < 3) {
+                    nowPlayingInfoFrames++
+                    log("NOWPLAYING: 车机 0x5003 设置播放信息（${frame.body.size}B，忽略）")
+                }
             }
 
             ids.START_HID -> {
@@ -815,6 +990,7 @@ class VirtualIap2Link(
                 }
             }
         }
+        notifyNowPlayingSubscriptionIfDirty()
     }
 
     /** 只对新按下的 HID Usage 触发媒体键；按住超过 [HID_HOLD_REPEAT_MILLIS] 后允许重复切歌 */
@@ -958,6 +1134,23 @@ class VirtualIap2Link(
     }
 
     companion object {
+        /** 当前最新一条虚拟 iAP2 链路（AirPlay 会话建立后登记，退役清空）。 */
+        @Volatile
+        private var activeLink: VirtualIap2Link? = null
+
+        /** [activeLink] 的只读访问；CarLifeNowPlaying 通过它发 0x5001（无链路时为 null）。 */
+        val active: VirtualIap2Link?
+            get() = activeLink
+
+        /**
+         * 车机 NowPlaying 订阅状态变化（0x5000 订阅 / 0x5002 退订 / 链路退役）。
+         *
+         * CarLifeNowPlaying 在首次媒体回调时自动注册：true 时按 [VirtualIap2Link.nowPlayingSelection]
+         * 发当前快照，false 时停止发送。
+         */
+        @Volatile
+        var onNowPlayingSubscription: ((subscribed: Boolean) -> Unit)? = null
+
         /** 每条网络链路最多采纳三次对端重新协商，避免无限循环 */
         const val MAX_PEER_RESTARTS = 3
 

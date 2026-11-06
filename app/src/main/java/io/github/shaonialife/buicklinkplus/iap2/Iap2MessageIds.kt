@@ -44,6 +44,9 @@ object Iap2MessageIds {
 
     // ---- 配件 bring-up 期间发来的订阅请求（接收并忽略即可）----
     const val START_NOW_PLAYING_UPDATES = 0x5000
+    const val NOW_PLAYING_UPDATE = 0x5001 // 配件 → 手机：媒体卡/仪表盘 NowPlayingUpdate（组 0 媒体项 + 组 1 播放属性）
+    const val STOP_NOW_PLAYING_UPDATES = 0x5002
+    const val SET_PLAYBACK_INFO = 0x5003 // 手机 → 配件：播放位置/队列窗口
     const val START_ROUTE_GUIDANCE_UPDATES = 0x5200
     const val START_POWER_UPDATES = 0xAE00
     const val START_COMMUNICATIONS_UPDATES = 0x4157
@@ -74,6 +77,9 @@ object Iap2MessageIds {
             EA_CLOSE_SESSION -> "StopEASession"
             EA_SESSION_STATUS -> "EASessionStatus"
             START_NOW_PLAYING_UPDATES -> "StartNowPlayingUpdates"
+            NOW_PLAYING_UPDATE -> "NowPlayingUpdate"
+            STOP_NOW_PLAYING_UPDATES -> "StopNowPlayingUpdates"
+            SET_PLAYBACK_INFO -> "SetPlaybackInfo"
             START_ROUTE_GUIDANCE_UPDATES -> "StartRouteGuidanceUpdates"
             START_POWER_UPDATES -> "StartPowerUpdates"
             START_COMMUNICATIONS_UPDATES -> "StartCommunicationsUpdates"

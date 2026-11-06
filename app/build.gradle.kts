@@ -8,11 +8,11 @@ plugins {
 /**
  * 版本名可以重置，版本码始终递增，保证覆盖安装
  *
- * 0.2.0 (154)：hybrid63 功能全面移植第一版实车测试包（视频/合成壁纸安全区/音频/TTS/
- * 触摸/导航 iAP2/内置壁纸/设置收敛 + 无内置 ADB 激活 + APK 瘦身）。
+ * 0.2.1 (155)：实车测试包第二版（媒体 NowPlaying/封面测试版 + HUD/语音键/GPS +
+ * 98386 音频 48K key + 98311 saveArea + 设置开关接线 + 功能证据文档）。
  */
-val appVersionName = "0.2.0"
-val appVersionCode = 154
+val appVersionName = "0.2.1"
+val appVersionCode = 155
 
 /**
  * 从根目录的 keystore.properties 读取签名，缺少时使用 debug 签名

@@ -76,7 +76,8 @@ class SettingsCategoryFragment : Fragment() {
         val context = requireContext()
         val phone =
             activity is PhoneSettingsHost &&
-                !io.github.shaonialife.buicklinkplus.ui.UiAppearance.isCar(context)
+                !io.github.shaonialife.buicklinkplus.ui.UiAppearance
+                    .isCar(context)
         val density = resources.displayMetrics.density
         val body =
             LinearLayout(context).apply {
@@ -234,7 +235,9 @@ class SettingsCategoryFragment : Fragment() {
         macDialog: (String) -> Unit,
     ) {
         note("配好手机与车机的蓝牙后，在首页点「启动连接」。CarLife 需要你手动打开 CarLife+ 并进入「无线连接」。")
-        val target = io.github.shaonialife.buicklinkplus.bt.TargetDevicePrefs.get(context)
+        val target =
+            io.github.shaonialife.buicklinkplus.bt.TargetDevicePrefs
+                .get(context)
         add(
             TextView(context).apply {
                 text = "目标车机：${target?.name?.takeIf { it.isNotBlank() } ?: "尚未选择（请在手机首页选择）"}"
@@ -326,8 +329,8 @@ class SettingsCategoryFragment : Fragment() {
                     textSize = 12f
                     setAppearanceTextColor(R.color.m3_on_var)
                 }
-            fun currentPercent(): Int =
-                (audioManager.getStreamVolume(AudioManager.STREAM_MUSIC) * 100 / maxVolume).coerceIn(0, 100)
+
+            fun currentPercent(): Int = (audioManager.getStreamVolume(AudioManager.STREAM_MUSIC) * 100 / maxVolume).coerceIn(0, 100)
 
             valueText.text = "当前 ${currentPercent()}%"
             val seek =
@@ -396,6 +399,7 @@ class SettingsCategoryFragment : Fragment() {
             }
         add(diag)
         val appContext = context.applicationContext
+
         fun refresh() {
             portStatus.text = "端口自检：检测中…"
             Bg.run("carlife-port-check") {
@@ -449,6 +453,7 @@ class SettingsCategoryFragment : Fragment() {
                 }
             }
         }
+
         fun reconnect() {
             if (!SessionController.isSessionRunning()) {
                 hostToast("会话未运行，请先在手机首页点「启动连接」")
@@ -560,7 +565,9 @@ class SettingsCategoryFragment : Fragment() {
         note: (String) -> Unit,
         action: (String, () -> Unit) -> Unit,
     ) {
-        note("Buick Link + ${io.github.shaonialife.buicklinkplus.BuildConfig.VERSION_NAME}（${io.github.shaonialife.buicklinkplus.BuildConfig.VERSION_CODE}）")
+        note(
+            "Buick Link + ${io.github.shaonialife.buicklinkplus.BuildConfig.VERSION_NAME}（${io.github.shaonialife.buicklinkplus.BuildConfig.VERSION_CODE}）",
+        )
         action("导出本次启动日志") { exportLog(context, LogExporter.Scope.CURRENT_SESSION) }
         action("导出全部历史日志") { exportLog(context, LogExporter.Scope.ALL) }
         action("清空界面日志") {
@@ -616,7 +623,9 @@ class SettingsCategoryFragment : Fragment() {
         if (host != null) {
             host.showToast(text)
         } else {
-            android.widget.Toast.makeText(requireContext(), text, android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast
+                .makeText(requireContext(), text, android.widget.Toast.LENGTH_SHORT)
+                .show()
         }
     }
 
