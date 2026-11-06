@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 手机仅在配置车机外观时复用操作控件，不改变原界面语义色 -->
+    <color name="car_control_surface">#F1F3F8</color>
+    <color name="car_text_shadow">#D9FFFFFF</color>
+</resources>

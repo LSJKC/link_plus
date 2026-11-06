@@ -1,0 +1,57 @@
+*.iml
+.gradle/
+.kotlin/
+local.properties
+.idea/
+.DS_Store
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+# 参考仓库（GPL/第三方源码，不随本项目分发）
+reference/
+# ZCode 会话产物
+.zcode/
+# 签名与私钥
+keystore.properties
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+*.p8
+*.ppk
+adbkey
+adbkey.pub
+embedded-adb-identity
+
+# 本机环境与运行产物
+.env
+.env.*
+!.env.example
+environment.json
+*.log
+*.hprof
+*.jfr
+*.apk
+*.aab
+
+# 抓包与本机凭据
+*.pcap
+*.pcapng
+*.har
+*.dump
+*.db
+*.sqlite
+*.sqlite3
+*.kdbx
+id_rsa
+id_ed25519
+credentials.json
+service-account*.json
+*-firebase-adminsdk-*.json
+
+# 车型重放 fixtures（含真实地址/热点名，逐条评审后才入册）
+app/src/test/resources/carplay/fixtures/*.jsonl
+.workbuddy/

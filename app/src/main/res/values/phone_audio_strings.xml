@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="phone_home_audio_hint">声音授权、音频策略与当前状态</string>
+    <string name="phone_home_audio_off">本次声音已关闭 · 点击查看设置</string>
+    <string name="phone_home_audio_permission">声音需重新授权 · 点击设置</string>
+    <string name="phone_home_audio_on">正在向车机发送声音 · 点击设置</string>
+    <string name="phone_home_audio_waiting">声音已开启 · 等待音频通道</string>
+    <string name="phone_permissions_signal">侧栏网络类型</string>
+    <string name="phone_permissions_signal_hint">可选电话权限，用于显示手机的 5G、4G 或 3G 类型</string>
+</resources>

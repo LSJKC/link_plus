@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 设置页进入使用短距离减速动画，避免点击后长时间等待过渡 -->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shareInterpolator="false">
+    <translate
+        android:duration="180"
+        android:fromXDelta="4%p"
+        android:interpolator="@android:interpolator/decelerate_cubic"
+        android:toXDelta="0" />
+    <alpha
+        android:duration="140"
+        android:fromAlpha="0.0"
+        android:toAlpha="1.0" />
+</set>

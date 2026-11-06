@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 设置首页和详情使用独立滚动容器，返回分类时保留原来的滚动位置 -->
+<merge xmlns:android="http://schemas.android.com/apk/res/android">
+    <ScrollView
+        android:id="@+id/phoneSettingsIndex"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clipToPadding="false"
+        android:overScrollMode="never"
+        android:scrollbars="none"
+        android:paddingBottom="24dp">
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/ui_settings"
+                android:textSize="26sp"
+                android:textStyle="bold"
+                android:textColor="@color/m3_on_surface" />
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/ui_settings_caption"
+                android:textSize="13sp"
+                android:textColor="@color/m3_on_var" />
+            <EditText
+                android:id="@+id/settingsSearch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="52dp"
+                android:layout_marginTop="16dp"
+                android:padding="14dp"
+                android:background="@drawable/bg_phone_card"
+                android:hint="@string/settings_search_hint"
+                android:inputType="text"
+                android:imeOptions="actionSearch"
+                android:importantForAutofill="no"
+                android:singleLine="true"
+                android:textSize="15sp"
+                android:textColor="@color/m3_on_surface"
+                android:textColorHint="@color/m3_on_var" />
+            <LinearLayout
+                android:id="@+id/phoneSearchResults"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:orientation="vertical"
+                android:visibility="gone" />
+            <TextView
+                android:id="@+id/phoneSearchEmpty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:padding="20dp"
+                android:text="@string/settings_search_empty"
+                android:textSize="14sp"
+                android:textColor="@color/m3_on_var"
+                android:visibility="gone" />
+            <LinearLayout
+                android:id="@+id/phoneExperienceGroup"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:background="@drawable/bg_phone_card"
+                android:clipToOutline="true"
+                android:orientation="vertical" />
+        </LinearLayout>
+    </ScrollView>
+
+    <ScrollView
+        android:id="@+id/phoneSettingsDetail"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clipToPadding="false"
+        android:overScrollMode="never"
+        android:scrollbars="none"
+        android:paddingTop="12dp"
+        android:paddingBottom="24dp"
+        android:visibility="gone">
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+            <LinearLayout
+                android:id="@+id/phoneCategoryBack"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="52dp"
+                android:background="?android:attr/selectableItemBackground"
+                android:clickable="true"
+                android:focusable="true"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:contentDescription="@string/ui_back_to_settings">
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:src="@drawable/ic_chev_left"
+                    android:importantForAccessibility="no" />
+                <TextView
+                    android:id="@+id/phoneCategoryTitle"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="10dp"
+                    android:textSize="22sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/m3_on_surface" />
+            </LinearLayout>
+            <FrameLayout
+                android:id="@+id/phoneCategoryBody"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp" />
+        </LinearLayout>
+    </ScrollView>
+</merge>

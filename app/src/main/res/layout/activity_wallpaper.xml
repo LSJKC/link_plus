@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="12dp"
+        android:paddingEnd="20dp"
+        android:paddingVertical="10dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+        <ImageView
+            android:id="@+id/wallpaperBack"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="@drawable/bg_ripple_circle"
+            android:padding="13dp"
+            android:src="@drawable/ic_chev_left"
+            app:tint="@color/m3_primary"
+            android:clickable="true"
+            android:focusable="true"
+            android:contentDescription="@string/wallpaper_editor_back" />
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:orientation="vertical">
+            <TextView style="@style/PhonePanelTitle" android:textSize="21sp"
+                android:text="@string/wallpaper_editor_title" />
+            <TextView style="@style/PhonePanelCaption" android:layout_marginTop="2dp"
+                android:text="@string/wallpaper_editor_subtitle" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <ScrollView
+        android:id="@+id/wallpaperEditorScroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:scrollbars="none"
+        android:overScrollMode="never"
+        android:clipToPadding="false">
+        <LinearLayout style="@style/PhonePanelBody" android:paddingBottom="12dp">
+            <LinearLayout style="@style/PhonePanelCard">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="horizontal" android:gravity="center_vertical">
+                    <TextView style="@style/PhonePanelTitle" android:layout_width="0dp"
+                        android:layout_weight="1" android:layout_marginEnd="12dp"
+                        android:text="@string/wallpaper_editor_preview" />
+                    <androidx.appcompat.widget.AppCompatButton
+                        android:id="@+id/wallpaperPick"
+                        style="@style/PhoneAction.Secondary"
+                        android:layout_width="wrap_content"
+                        android:text="@string/wallpaper_editor_pick" />
+                </LinearLayout>
+                <FrameLayout
+                    android:id="@+id/wallpaperPreviewHost"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:background="@drawable/bg_phone_preview"
+                    android:clipToOutline="true" />
+                <TextView
+                    android:id="@+id/wallpaperStatus"
+                    style="@style/PhonePanelCaption"
+                    android:layout_marginTop="12dp"
+                    android:accessibilityLiveRegion="polite" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/PhonePanelCard">
+                <TextView style="@style/PhonePanelTitle" android:text="@string/wallpaper_editor_adjust" />
+                <TextView style="@style/PhonePanelCaption" android:layout_marginTop="6dp"
+                    android:text="@string/wallpaper_editor_adjust_hint" />
+                <LinearLayout
+                    android:id="@+id/wallpaperAdjustments"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
+                <View android:layout_width="match_parent" android:layout_height="1dp"
+                    android:layout_marginTop="8dp" android:layout_marginBottom="16dp"
+                    android:background="@drawable/bg_phone_divider" />
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <androidx.appcompat.widget.AppCompatButton
+                        android:id="@+id/wallpaperCenter"
+                        style="@style/PhoneAction.Secondary"
+                        android:layout_width="0dp" android:layout_weight="1"
+                        android:layout_marginEnd="10dp"
+                        android:text="@string/wallpaper_editor_center" />
+                    <androidx.appcompat.widget.AppCompatButton
+                        android:id="@+id/wallpaperReset"
+                        style="@style/PhoneAction.Secondary"
+                        android:layout_width="0dp" android:layout_weight="1"
+                        android:text="@string/wallpaper_editor_reset" />
+                </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:paddingHorizontal="18dp"
+        android:paddingTop="10dp" android:paddingBottom="12dp">
+        <androidx.appcompat.widget.AppCompatButton
+            android:id="@+id/wallpaperSave"
+            style="@style/PhoneAction"
+            android:text="@string/wallpaper_editor_save" />
+        <TextView style="@style/PhonePanelCaption" android:layout_marginTop="8dp"
+            android:gravity="center" android:text="@string/wallpaper_editor_save_hint" />
+    </LinearLayout>
+</LinearLayout>

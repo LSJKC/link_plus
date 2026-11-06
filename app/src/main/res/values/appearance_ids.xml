@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="appIconRequest" type="id" />
+    <item name="appearanceBinding" type="id" />
+    <item name="glassWindowBackdrop" type="id" />
+    <item name="glassWindowObserver" type="id" />
+    <item name="carBackdropBlurRadius" type="id" />
+    <item name="panelOutlineSwitch" type="id" />
+    <item name="musicIslandSwitch" type="id" />
+</resources>

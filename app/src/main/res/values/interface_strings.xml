@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 固定界面文案保持原样，百分号不参与格式替换 -->
+    <string name="ui_shizuku_checking" formatted="false">"内置服务状态检查中"</string>
+    <string name="ui_clear_stale_displays" formatted="false">"清理残留屏"</string>
+    <string name="ui_quality_initial" formatted="false">"分辨率 100% · 30/30 fps"</string>
+    <string name="ui_shizuku_name" formatted="false">"内置服务"</string>
+    <string name="ui_checking_ellipsis" formatted="false">"检查中…"</string>
+    <string name="ui_checking" formatted="false">"检查中"</string>
+    <string name="ui_compat_dim_optional" formatted="false">"兼容暗屏（可选）"</string>
+    <string name="ui_compat_dim_description" formatted="false">"关闭：跟随系统真实息屏；开启：保持常亮并自动暗屏"</string>
+    <string name="ui_screen_background_settings" formatted="false">"息屏与后台运行设置"</string>
+    <string name="ui_export_logs" formatted="false">"导出日志文件"</string>
+    <string name="ui_disclaimer_title" formatted="false">"免责声明"</string>
+    <string name="ui_disclaimer_summary" formatted="false">"测试范围 · 驾驶风险 · 系统权限"</string>
+    <string name="ui_connected_background_hint" formatted="false">"连接后可放心收起手机，服务会持续运行"</string>
+    <string name="ui_display_quality_title" formatted="false">"显示与画面质量"</string>
+    <string name="ui_disclaimer_first_use" formatted="false">"首次使用前请完整阅读。接受后可在主界面底部随时重看。"</string>
+    <string name="ui_disclaimer_decline" formatted="false">"放弃使用"</string>
+    <string name="ui_target_picker_title" formatted="false">"选择目标车机"</string>
+    <string name="ui_target_picker_description" formatted="false">"已配对设备可直接选用；点击未配对的设备会发起系统蓝牙配对"</string>
+    <string name="ui_bluetooth_paired" formatted="false">"已配对"</string>
+    <string name="ui_bluetooth_paired_empty" formatted="false">"暂无已配对设备——请在下方扫描并点击配对"</string>
+    <string name="ui_bluetooth_nearby" formatted="false">"附近的设备"</string>
+    <string name="ui_bluetooth_rescan" formatted="false">"重新扫描"</string>
+    <string name="ui_bluetooth_scanning" formatted="false">"正在扫描附近的蓝牙设备…"</string>
+    <string name="ui_cancel" formatted="false">"取消"</string>
+    <string name="ui_display_stream_description" formatted="false">"视频流按车机分辨率的百分比生成虚拟屏与编码画面（逻辑布局不变）。分辨率和码率改动下次连接起效；帧率受车机及编码器上限约束。"</string>
+    <string name="ui_stream_resolution" formatted="false">"流分辨率"</string>
+    <string name="ui_saved_next_connection" formatted="false">"保存后下次连接起效"</string>
+    <string name="ui_target_frame_rate" formatted="false">"目标帧率"</string>
+    <string name="ui_frame_rate_30" formatted="false">"30 fps"</string>
+    <string name="ui_frame_rate_60" formatted="false">"60 fps"</string>
+    <string name="ui_frame_rate_description" formatted="false">"连接中可在已协商上限内切换；更高帧率需重新连接且车机支持"</string>
+    <string name="ui_video_bitrate_next_connection" formatted="false">"画面质量 · 视频码率（下次连接生效）"</string>
+    <string name="ui_touch_injection_throttle" formatted="false">"触摸注入节流"</string>
+    <string name="ui_touch_injection_description" formatted="false">"交互滞后但帧率正常（事件派发堆积）时调高试验；拖动即时生效"</string>
+    <string name="ui_dock_width" formatted="false">"栏宽度"</string>
+    <string name="ui_dock_scale_description" formatted="false">"整条 Dock（图标/时钟/文字）等比缩放，50%–100%；保存后下次连接起效"</string>
+    <string name="ui_car_glass_appearance" formatted="false">"车机外观 · 透明度与模糊"</string>
+    <string name="ui_amap_display_mode" formatted="false">"高德显示模式"</string>
+    <string name="ui_car_map_default" formatted="false">"车载页面（默认）"</string>
+    <string name="ui_normal_map" formatted="false">"普通地图"</string>
+    <string name="ui_car_map_description" formatted="false">"车载页面使用高德提供的大地图与简洁搜索入口，手机路线不会自动接续。普通地图使用手机界面，部分页面可能保留黑边。模式在下次连接生效，切换前请先在高德结束不用的地图任务。"</string>
+    <string name="ui_orientation_description" formatted="false">"选择需要在车机横屏显示的应用，未连接时也能保存配置。连接车机后尝试应用，断开后恢复正常方向。实际效果取决于系统和应用适配；连接期间修改可能重启目标应用，请先保存当前内容。"</string>
+    <string name="ui_quality_caption" formatted="false">"找到适合你的清晰度与流畅度"</string>
+    <string name="ui_quality_title" formatted="false">"画面清晰度"</string>
+    <string name="ui_native_resolution_hint" formatted="false">"100% 为车机原生分辨率 · 下次连接生效"</string>
+    <string name="ui_custom_scale" formatted="false">"自定义比例"</string>
+    <string name="ui_custom_resolution_scale" formatted="false">"自定义分辨率比例"</string>
+    <string name="ui_resolution_scale_hint" formatted="false">"30%～160%，每次调整 5%；松手保存"</string>
+    <string name="ui_smoothness_title" formatted="false">"流畅度"</string>
+    <string name="ui_frame_rate_limit_hint" formatted="false">"实际帧率受车机与编码器上限限制"</string>
+    <string name="ui_frame_rate_30_stable" formatted="false">"30 fps · 稳定"</string>
+    <string name="ui_frame_rate_60_smooth" formatted="false">"60 fps · 流畅"</string>
+    <string name="ui_bitrate_title" formatted="false">"视频码率"</string>
+    <string name="ui_bitrate_bandwidth_hint" formatted="false">"越高越清晰，也更占带宽 · 下次连接生效"</string>
+    <string name="ui_advanced_tuning" formatted="false">"高级微调"</string>
+    <string name="ui_touch_margins_caption" formatted="false">"触控响应与画面边距"</string>
+    <string name="ui_touch_response" formatted="false">"触控响应"</string>
+    <string name="ui_touch_throttle_interval" formatted="false">"触控节流间隔"</string>
+    <string name="ui_touch_throttle_hint" formatted="false">"仅在触控滞后而画面正常时尝试调高，立即生效"</string>
+    <string name="ui_active_quality" formatted="false">"当前运行参数"</string>
+    <string name="ui_dock_size_caption" formatted="false">"调整侧栏整体大小"</string>
+    <string name="ui_dock_size_title" formatted="false">"侧栏大小"</string>
+    <string name="ui_dock_size_hint" formatted="false">"图标、时钟与文字整体缩放 · 下次连接生效"</string>
+    <string name="ui_dock_size_scale" formatted="false">"侧栏大小比例"</string>
+    <string name="ui_dock_size_steps" formatted="false">"50%～100%，每次调整 5%"</string>
+    <string name="ui_default_map_caption" formatted="false">"选择车机桌面使用的地图"</string>
+    <string name="ui_default_map_title" formatted="false">"默认地图"</string>
+    <string name="ui_next_connection" formatted="false">"下次连接生效"</string>
+    <string name="ui_car_map" formatted="false">"车载页面"</string>
+    <string name="ui_phone_map_description" formatted="false">"车载页面提供简洁的大地图；普通地图保留手机版操作。手机路线不会自动接续，切换前请在高德结束不用的地图任务。"</string>
+    <string name="ui_bluetooth_device" formatted="false">"蓝牙设备"</string>
+    <string name="ui_select" formatted="false">"选择"</string>
+    <string name="ui_home" formatted="false">"首页"</string>
+    <string name="ui_settings" formatted="false">"设置"</string>
+    <string name="ui_settings_caption" formatted="false">"按你的习惯，设置每一次出行"</string>
+    <string name="ui_back_to_settings" formatted="false">"返回设置"</string>
+    <!-- 动态值使用字符串占位，保留原有数字显示方式和空格 -->
+    <string name="ui_disclaimer_read_only">你可以随时回来查看本声明（当前版本 v%1$s）。</string>
+    <string name="ui_bluetooth_strategy">蓝牙策略 · %1$s　›</string>
+    <string name="ui_ready_count">%1$s/%2$s</string>
+    <string name="ui_selected_action">✓ %1$s</string>
+    <string name="ui_scanning_found">继续扫描中…已发现 %1$s 台未配对设备</string>
+    <string name="ui_shell_read_unavailable">内置服务未就绪——shell 状态读取需要内置服务</string>
+    <string name="ui_shell_reset_unavailable">内置服务未就绪——shell 复位需要内置服务</string>
+    <string name="ui_shell_reset_result">复位结果：\n%1$s\n残留虚拟屏: 释放 %2$s/%3$s（保留当前会话屏）\n提示：letterbox 调优会在下次连接时自动重新应用</string>
+    <string name="ui_audio_strategy_next_connection">当前设置：%1$s，下次连接生效</string>
+    <string name="ui_percentage">%1$s%%</string>
+    <string name="ui_saved_resolution">已保存分辨率：%1$s%%；下次连接生效</string>
+    <string name="ui_margin_side">%1$s侧</string>
+    <string name="ui_margin_value">%1$s留边：%2$s 原始像素</string>
+</resources>

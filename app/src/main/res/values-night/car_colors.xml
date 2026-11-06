@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="car_control_surface">#272D38</color>
+    <color name="car_text_shadow">#E6000000</color>
+</resources>

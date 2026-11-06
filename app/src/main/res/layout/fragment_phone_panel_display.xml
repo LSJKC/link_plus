@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/phonePanelScroll"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:scrollbars="none"
+    android:overScrollMode="never">
+
+    <LinearLayout style="@style/PhonePanelBody">
+
+        <TextView style="@style/PhonePanelCaption"
+            android:layout_marginBottom="16dp"
+            android:text="@string/ui_quality_caption" />
+
+        <LinearLayout style="@style/PhonePanelCard">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal" android:gravity="center_vertical">
+                <TextView style="@style/PhonePanelTitle" android:layout_width="0dp"
+                    android:layout_weight="1" android:text="@string/ui_quality_title" />
+                <TextView android:id="@+id/displayScaleValue" style="@style/PhonePanelValue" />
+            </LinearLayout>
+            <TextView style="@style/PhonePanelCaption" android:layout_marginTop="4dp"
+                android:text="@string/ui_native_resolution_hint" />
+            <io.github.shaonialife.buicklinkplus.ui.PhoneOptionGroup
+                android:id="@+id/displayScalePresets"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="16dp" />
+            <!-- 展开箭头独立旋转并保留原控件 ID，文字随字号自然换行 -->
+<LinearLayout android:id="@+id/phoneScaleToggle" style="@style/PhonePanelDisclosure"
+                android:layout_marginTop="8dp" tools:ignore="UseCompoundDrawables">
+                <TextView android:id="@+id/phoneScaleCustomLabel" style="@style/PhonePanelCaption"
+                    android:layout_width="0dp" android:layout_weight="1" android:text="@string/ui_custom_scale" />
+                <ImageView android:id="@+id/phoneScaleArrow" style="@style/PhonePanelArrow"
+                    android:contentDescription="@null" android:importantForAccessibility="no" />
+            </LinearLayout>
+            <LinearLayout android:id="@+id/phoneScaleBody"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:visibility="gone">
+                <SeekBar android:id="@+id/displayScaleSeek" style="@style/PhonePanelSlider"
+                    android:contentDescription="@string/ui_custom_resolution_scale" android:max="26" />
+                <TextView style="@style/PhonePanelCaption" android:text="@string/ui_resolution_scale_hint" />
+            </LinearLayout>
+            <!-- 保留共享绑定所需控件，手机用卡片中的简短说明代替重复状态 -->
+            <TextView android:id="@+id/displayScalePresetNote" style="@style/PhonePanelCaption" android:visibility="gone" />
+            <TextView android:id="@+id/displayScaleNote" style="@style/PhonePanelCaption" android:visibility="gone" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/PhonePanelCard">
+            <TextView style="@style/PhonePanelTitle" android:text="@string/ui_smoothness_title" />
+            <TextView style="@style/PhonePanelCaption" android:layout_marginTop="4dp"
+                android:text="@string/ui_frame_rate_limit_hint" />
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="16dp" android:orientation="horizontal">
+                <TextView android:id="@+id/btnFps30" style="@style/PhonePanelSegment"
+                    android:layout_marginEnd="8dp" android:text="@string/ui_frame_rate_30_stable" />
+                <TextView android:id="@+id/btnFps60" style="@style/PhonePanelSegment" android:text="@string/ui_frame_rate_60_smooth" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout style="@style/PhonePanelCard">
+            <TextView style="@style/PhonePanelTitle" android:text="@string/ui_bitrate_title" />
+            <TextView style="@style/PhonePanelCaption" android:layout_marginTop="4dp"
+                android:text="@string/ui_bitrate_bandwidth_hint" />
+            <io.github.shaonialife.buicklinkplus.ui.PhoneOptionGroup
+                android:id="@+id/bitrateOptions"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="16dp" />
+            <TextView android:id="@+id/bitrateNote" style="@style/PhonePanelCaption"
+                android:layout_marginTop="12dp" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/PhonePanelCard">
+            <LinearLayout android:id="@+id/phoneAdvancedToggle" style="@style/PhonePanelDisclosure">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:orientation="vertical">
+                    <TextView style="@style/PhonePanelTitle" android:text="@string/ui_advanced_tuning" />
+                    <TextView style="@style/PhonePanelCaption" android:layout_marginTop="4dp"
+                        android:text="@string/ui_touch_margins_caption" />
+                </LinearLayout>
+                <ImageView android:id="@+id/phoneAdvancedArrow" style="@style/PhonePanelArrow"
+                    android:contentDescription="@null" android:importantForAccessibility="no" />
+            </LinearLayout>
+            <LinearLayout android:id="@+id/phoneAdvancedBody"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:visibility="gone">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp" android:gravity="center_vertical" android:orientation="horizontal">
+                    <TextView style="@style/PhonePanelTitle" android:layout_width="0dp"
+                        android:layout_weight="1" android:text="@string/ui_touch_response" />
+                    <TextView android:id="@+id/throttleValue" style="@style/PhonePanelValue" android:textSize="16sp" />
+                </LinearLayout>
+                <SeekBar android:id="@+id/throttleSeek" style="@style/PhonePanelSlider"
+                    android:contentDescription="@string/ui_touch_throttle_interval" android:max="6" />
+                <TextView style="@style/PhonePanelCaption"
+                    android:text="@string/ui_touch_throttle_hint" />
+                <LinearLayout android:id="@+id/displayExtraControls"
+                    android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout style="@style/PhonePanelCard">
+            <!-- 展开箭头独立旋转并保留原控件 ID，文字随字号自然换行 -->
+<LinearLayout android:id="@+id/phoneQualityToggle" style="@style/PhonePanelDisclosure" tools:ignore="UseCompoundDrawables">
+                <TextView style="@style/PhonePanelTitle" android:layout_width="0dp"
+                    android:layout_weight="1" android:text="@string/ui_active_quality" />
+                <ImageView android:id="@+id/phoneQualityArrow" style="@style/PhonePanelArrow"
+                    android:contentDescription="@null" android:importantForAccessibility="no" />
+            </LinearLayout>
+            <TextView android:id="@+id/displayActiveQuality" style="@style/PhonePanelCaption"
+                android:layout_marginTop="12dp" android:visibility="gone" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

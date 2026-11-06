@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:paddingStart="20dp"
+    android:paddingEnd="13dp"
+    android:paddingTop="14dp"
+    android:paddingBottom="10dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:layout_marginBottom="11dp"
+        android:text="@string/ui_orientation_description"
+        android:textColor="@color/m3_on_var"
+        android:textSize="12sp" />
+
+    <!-- 能力与权限说明不禁用配置清单，返回页面后重新检查 -->
+    <TextView
+        android:id="@+id/oriUnsupportedBanner"
+        style="@style/PhoneInlineNotice"
+        android:layout_marginBottom="10dp"
+        android:visibility="gone" />
+
+    <!-- 面板外残留：系统侧开着覆盖、但应用已卸载（偏好随卸载消失）——列表里点不到，
+         只能在顶部汇总清理。默认隐藏，有此类残留时出现 -->
+    <TextView
+        android:id="@+id/oriOrphanBanner"
+        style="@style/PhoneInlineNotice"
+        android:layout_marginBottom="10dp"
+        android:visibility="gone" />
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <TextView
+            android:id="@+id/listLoading"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:gravity="center"
+            android:text="@string/ui_text_6b2d368cb4ec"
+            android:textColor="@color/m3_on_var"
+            android:textSize="12.5sp" />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/oriList"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:paddingEnd="26dp"
+            android:scrollbars="none"  android:paddingStart="0dp" />
+
+        <LinearLayout
+            android:id="@+id/oriListIndex"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="end|center_vertical"
+            android:orientation="vertical"
+            android:paddingStart="6dp"  android:paddingEnd="0dp" />
+    </FrameLayout>
+</LinearLayout>

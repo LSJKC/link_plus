@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ui_text_00bd3960fea8" formatted="false">"展开"</string>
+    <string name="ui_text_0160e9c16721" formatted="false">"Shell 全局状态"</string>
+    <string name="ui_text_01eeb5549c2b" formatted="false">"复制日志"</string>
+    <string name="ui_text_02712916dee9" formatted="false">"清除日志"</string>
+    <string name="ui_text_062bb22ae1d0" formatted="false">"点击手机屏幕任意处恢复"</string>
+    <string name="ui_text_10ebd92e1742" formatted="false">"应用横屏"</string>
+    <string name="ui_text_111923ecbb8e" formatted="false">"应用超采样"</string>
+    <string name="ui_text_1bd1b56a7c60" formatted="false">"回到桌面"</string>
+    <string name="ui_text_2fb641b6cd47" formatted="false">"全屏 aspectFill"</string>
+    <string name="ui_text_38924e86f41e" formatted="false">"媒体信息未连接"</string>
+    <string name="ui_text_3b2d15f52432" formatted="false">"启动连接"</string>
+    <string name="ui_text_3c01addf522e" formatted="false">"0:00 / 0:00"</string>
+    <string name="ui_text_3c6651e8b7e7" formatted="false">"车机壁纸"</string>
+    <string name="ui_text_3cd8161216ef" formatted="false">"仪表盘地图屏使用的地图应用，选中即生效。"</string>
+    <string name="ui_text_3d52574ce150" formatted="false">"未连接"</string>
+    <string name="ui_text_3fd47edce45b" formatted="false">"关闭"</string>
+    <string name="ui_text_40182ee6572d" formatted="false">"超采样以 1.5× 分辨率渲染再缩回，竖屏应用顶部空带更小；横屏应用建议关闭（更清晰流畅）。自动 = 检测为竖屏应用时开启。"</string>
+    <string name="ui_text_410554872820" formatted="false">"车机显示"</string>
+    <string name="ui_text_473400815c0f" formatted="false">"声音"</string>
+    <string name="ui_text_47dc9622ed59" formatted="false">"监听日志"</string>
+    <string name="ui_text_572cf45ba436" formatted="false">"返回"</string>
+    <string name="ui_text_699a8f512e24" formatted="false">"(点「刷新」读取)"</string>
+    <string name="ui_text_6b2d368cb4ec" formatted="false">"正在读取应用列表…"</string>
+    <string name="ui_text_6cf2531ab111" formatted="false">"授权"</string>
+    <string name="ui_text_6d9531c45921" formatted="false">"跳到底部"</string>
+    <string name="ui_text_770de45df4a8" formatted="false">"未在播放"</string>
+    <string name="ui_text_7a978bb47550" formatted="false">"与车机蓝牙完成配对后，点击下方按钮发起无线连接"</string>
+    <string name="ui_text_7dbac1c20f23" formatted="false">"日志"</string>
+    <string name="ui_text_7eb336e42cb5" formatted="false">"自动"</string>
+    <string name="ui_text_883217c6d07b" formatted="false">"需要「投屏」权限，可选 · 关闭时车机无声音"</string>
+    <string name="ui_text_8da97ddda990" formatted="false">"开启"</string>
+    <string name="ui_text_916afcd85322" formatted="false">"更换"</string>
+    <string name="ui_text_953cf7bea5d3" formatted="false">"连接准备"</string>
+    <string name="ui_text_95ac0ce3b08b" formatted="false">"复位"</string>
+    <string name="ui_text_9993504590b6" formatted="false">"dock 栏设置"</string>
+    <string name="ui_text_a4dc401791ef" formatted="false">"默认地图"</string>
+    <string name="ui_text_a508dadda912" formatted="false">"常亮"</string>
+    <string name="ui_text_a7878110260a" formatted="false">"车机侧声音"</string>
+    <string name="ui_text_aee887434131" formatted="false">"刷新"</string>
+    <string name="ui_text_b64e99de1ba0" formatted="false">"letterbox / 虚拟屏 / wm 覆盖 —— 调试排查用"</string>
+    <string name="ui_text_bbaa9f06378b" formatted="false">"壁纸"</string>
+    <string name="ui_text_bed7d33f8fad" formatted="false">"管理桌面应用"</string>
+    <string name="ui_text_c9a7470e4465" formatted="false">"设备检测中"</string>
+    <string name="ui_text_ccc0cfdf02e4" formatted="false">"复位默认"</string>
+    <string name="ui_text_ced0f12524bb" formatted="false">"车机设置"</string>
+    <string name="ui_text_e2a76ef1f12e" formatted="false">"终端"</string>
+    <string name="ui_text_e4f0a1550ede" formatted="false">"车机侧声音 · 开启"</string>
+    <string name="ui_text_e567246c092d" formatted="false">"立即假息屏"</string>
+    <string name="ui_text_e8e1835537c5" formatted="false">"假息屏"</string>
+    <string name="ui_text_f436f568e69e" formatted="false">"最近日志 · 可复制反馈问题"</string>
+    <string name="ui_text_f48d334495f6" formatted="false">"桌面"</string>
+    <string name="ui_text_f88182fcd575" formatted="false">"进入"</string>
+    <string name="ui_text_fa33e1000975" formatted="false">"媒体"</string>
+    <string name="ui_text_fc08fa260979" formatted="false">"运行日志"</string>
+</resources>

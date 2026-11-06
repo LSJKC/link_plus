@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 「接受」按钮禁用时使用当前主题的次要文字色，保证倒计时可读
+     启用后使用强调色按钮的对应文字色 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:color="@color/m3_on_var"
+        android:state_enabled="false" />
+    <item android:color="@color/m3_on_primary" />
+</selector>

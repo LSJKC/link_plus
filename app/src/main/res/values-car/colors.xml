@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 仅由车机局部资源上下文读取，手机窗口继续使用原配色。
+         车机明暗主题现在跟随壁纸亮度：浅色壁纸走本套浅色方案（浅遮罩 + 深字），
+         深色壁纸走 values-car-night 的暗色方案（深遮罩 + 浅字）。 -->
+    <color name="m3_surface">#F2F4F7</color>
+    <color name="m3_surface_high">#E8ECF1</color>
+    <color name="m3_surface_highest">#DCE2EB</color>
+    <color name="m3_on_surface">#17202E</color>
+    <color name="m3_on_var">#354357</color>
+    <color name="m3_outline">#657287</color>
+    <color name="m3_outline_var">#BAC4D3</color>
+    <color name="glass_panel">#00000000</color>
+    <color name="glass_backdrop_wash">#00000000</color>
+    <color name="glass_muted_panel">#C7E4E9F1</color>
+    <color name="glass_stroke">#80758296</color>
+    <color name="glass_subtle_border">#60758296</color>
+    <color name="car_control_surface">#C7F1F3F8</color>
+    <color name="m3_primary">#5B57E8</color>
+    <color name="m3_on_primary">#FFFFFF</color>
+    <color name="m3_pri_container">#E7E8FF</color>
+    <color name="m3_on_pri_container">#302E96</color>
+    <color name="glass_selected">#C7E7E8FF</color>
+</resources>

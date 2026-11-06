@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 选中片采用磨砂强调表面，文字仍使用车机正文色 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/glass_selected" />
+    <corners android:radius="8dp" />
+    <stroke android:width="1dp" android:color="@color/m3_primary" />
+</shape>

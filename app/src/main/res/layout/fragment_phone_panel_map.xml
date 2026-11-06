@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/phonePanelScroll"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:fillViewport="true" android:scrollbars="none" android:overScrollMode="never">
+    <LinearLayout style="@style/PhonePanelBody">
+        <TextView style="@style/PhonePanelCaption" android:layout_marginBottom="16dp"
+            android:text="@string/ui_default_map_caption" />
+        <LinearLayout style="@style/PhonePanelCard">
+            <TextView style="@style/PhonePanelTitle" android:text="@string/ui_default_map_title" />
+            <LinearLayout android:id="@+id/mapOptions"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="14dp" android:orientation="vertical" />
+        </LinearLayout>
+        <LinearLayout android:id="@+id/amapModeSection" style="@style/PhonePanelCard" android:visibility="gone">
+            <TextView style="@style/PhonePanelTitle" android:text="@string/ui_amap_display_mode" />
+            <TextView style="@style/PhonePanelCaption" android:layout_marginTop="4dp" android:text="@string/ui_next_connection" />
+            <io.github.shaonialife.buicklinkplus.ui.PhoneOptionGroup
+                android:id="@+id/amapModeOptions"
+                android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp">
+                <RadioButton android:id="@+id/amapCarPage"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/ui_car_map" />
+                <RadioButton android:id="@+id/amapNormalPage"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/ui_normal_map" />
+            </io.github.shaonialife.buicklinkplus.ui.PhoneOptionGroup>
+            <TextView style="@style/PhonePanelCaption" android:layout_marginTop="14dp"
+                android:text="@string/ui_phone_map_description" />
+        </LinearLayout>
+        <LinearLayout android:id="@+id/mapDisplayControls" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingTop="20dp">
+            <TextView android:id="@+id/mapScaleValue" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/m3_on_surface" android:textSize="16sp" />
+            <SeekBar android:id="@+id/mapScaleSeek" android:layout_width="match_parent" android:layout_height="48dp" android:max="10" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/map_scale_hint" android:textColor="@color/m3_on_var" />
+            <TextView android:id="@+id/mapHandoffState" android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingTop="12dp" android:textColor="@color/m3_on_var" />
+            <Button android:id="@+id/mapToPhone" style="@style/PhoneAction.Secondary"
+                android:layout_marginTop="12dp" android:text="@string/map_to_phone" />
+            <Button android:id="@+id/mapToCar" style="@style/PhoneAction.Secondary"
+                android:layout_marginTop="10dp" android:text="@string/map_to_car" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

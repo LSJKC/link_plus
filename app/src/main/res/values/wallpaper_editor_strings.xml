@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="wallpaper_editor_title">壁纸</string>
+    <string name="wallpaper_editor_subtitle">调整大小与位置</string>
+    <string name="wallpaper_editor_back">返回，保留原壁纸</string>
+    <string name="wallpaper_editor_preview">效果预览</string>
+    <string name="wallpaper_editor_pick">更换图片</string>
+    <string name="wallpaper_editor_adjust">画面微调</string>
+    <string name="wallpaper_editor_adjust_hint">拖动快速调整，也可以点两侧加减微调</string>
+    <string name="wallpaper_editor_zoom">缩放</string>
+    <string name="wallpaper_editor_horizontal">横向位置</string>
+    <string name="wallpaper_editor_vertical">纵向位置</string>
+    <string name="wallpaper_editor_zoom_value">%1$d%%</string>
+    <string name="wallpaper_editor_offset_value">%1$.1f%%</string>
+    <string name="wallpaper_editor_center">位置居中</string>
+    <string name="wallpaper_editor_reset">清除壁纸</string>
+    <string name="wallpaper_editor_save">保存并应用</string>
+    <string name="wallpaper_editor_save_hint">保存后生效，返回会保留原壁纸</string>
+    <string name="wallpaper_editor_loading">正在加载预览…</string>
+    <string name="wallpaper_editor_load_error">图片无法读取，请重新选择，原壁纸尚未更改</string>
+    <string name="wallpaper_editor_example">车机未连接 · 当前为示例预览</string>
+    <string name="wallpaper_editor_live">当前车机画布 · 调整后可实时预览</string>
+    <string name="wallpaper_editor_saving">正在保存…</string>
+    <string name="wallpaper_editor_save_error">保存失败，请重试</string>
+</resources>

@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/phoneBottomNavigation"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@color/m3_surface"
+    android:orientation="horizontal"
+    android:baselineAligned="false"
+    android:paddingTop="4dp"
+    android:paddingBottom="4dp">
+
+    <LinearLayout
+        android:id="@+id/phoneHomeTab"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:minHeight="56dp"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:background="@drawable/bg_phone_nav_touch"
+        android:clickable="true"
+        android:focusable="true"
+        android:contentDescription="@string/ui_home">
+        <FrameLayout
+            android:id="@+id/phoneHomeIndicator"
+            android:layout_width="28dp"
+            android:layout_height="28dp">
+            <ImageView
+                android:id="@+id/phoneHomeIcon"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_phone_home"
+                android:importantForAccessibility="no" />
+        </FrameLayout>
+        <TextView
+            android:id="@+id/phoneHomeLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="@string/ui_home"
+            android:textSize="12sp"
+            android:textColor="@color/m3_on_var" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/phoneSettingsTab"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:minHeight="56dp"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:background="@drawable/bg_phone_nav_touch"
+        android:clickable="true"
+        android:focusable="true"
+        android:contentDescription="@string/ui_settings">
+        <FrameLayout
+            android:id="@+id/phoneSettingsIndicator"
+            android:layout_width="28dp"
+            android:layout_height="28dp">
+            <ImageView
+                android:id="@+id/phoneSettingsIcon"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_phone_settings"
+                android:importantForAccessibility="no" />
+        </FrameLayout>
+        <TextView
+            android:id="@+id/phoneSettingsLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="@string/ui_settings"
+            android:textSize="12sp"
+            android:textColor="@color/m3_on_var" />
+    </LinearLayout>
+</LinearLayout>

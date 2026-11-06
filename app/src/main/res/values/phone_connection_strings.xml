@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="phone_connection_vehicle">我的车机</string>
+    <string name="phone_connection_choose_vehicle">选择你的车机</string>
+    <string name="phone_connection_change">选择</string>
+    <string name="phone_connection_wireless">无线连接</string>
+    <string name="phone_connection_waiting">等待车机</string>
+    <string name="phone_connection_automatic">启动连接后自动接入车机网络，无需填写热点信息</string>
+    <string name="phone_connection_internet">本应用上网路径</string>
+    <string name="phone_connection_cellular">手机流量网络</string>
+    <string name="phone_connection_detecting">检测中</string>
+    <string name="phone_connection_compatibility">兼容选项</string>
+    <string name="phone_connection_compatibility_hint">自动连接遇到问题时使用</string>
+    <string name="phone_connection_manual">手动连接系统 Wi-Fi　›</string>
+    <string name="phone_connection_manual_hint">收到车机信息后可用。手动连接可能影响手机流量上网，由系统决定网络路径</string>
+</resources>

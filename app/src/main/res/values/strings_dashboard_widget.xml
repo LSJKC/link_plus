@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="dashboard_widget_tab">官方组件</string>
+    <string name="dashboard_lyrics_tab">音乐卡 / 歌词</string>
+    <string name="dashboard_widget_binding_notice">请在手机上完成官方音乐组件授权\n取消后保留原选择</string>
+    <string name="dashboard_widget_waiting_notice">正在等待官方组件更新\n点击打开车载应用，完成登录或播放后返回</string>
+    <string name="dashboard_widget_too_short">右侧高度不足以完整显示这个官方组件，请调整分屏或切回音乐卡</string>
+    <item type="id" name="dashWidgetLyrics" />
+</resources>

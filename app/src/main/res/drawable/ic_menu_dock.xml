@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 来源及许可见 docs/icon-sources.json -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="13dp" android:height="13dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#00000000" android:strokeColor="@color/m3_primary" android:strokeWidth="1.75" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M4,3 H20 Q22,3 22,5 V19 Q22,21 20,21 H4 Q2,21 2,19 V5 Q2,3 4,3 Z M8,3 V21 M5,7 V8 M5,12 V13 M5,17 V18" />
+</vector>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="lyrics_unavailable">歌词暂不可用，稍后可重新打开重试</string>
+    <string name="lyrics_loading">正在查找歌词…</string>
+    <string name="lyrics_synced_source">%1$s · 逐行歌词</string>
+    <string name="lyrics_live">播放器 · 实时歌词</string>
+    <string name="lyrics_plain">暂无逐行同步</string>
+    <string name="lyrics_preview">歌词预览</string>
+    <string name="lyrics_instrumental">纯音乐，请欣赏</string>
+    <string name="lyrics_gap">间奏</string>
+    <string name="lyrics_back_cover">返回封面</string>
+    <string name="lyrics_open">点击查看歌词</string>
+    <string name="lyrics_no_internet">暂无可用的歌词网络</string>
+    <string name="lyrics_server_busy">歌词服务暂时繁忙</string>
+    <string name="lyrics_rate_limited">歌词请求受限，请稍后重试</string>
+    <string name="lyrics_timeout">歌词请求超时</string>
+    <string name="lyrics_connection_failed">歌词服务连接失败</string>
+    <string name="lyrics_invalid_response">歌词响应暂不支持</string>
+    <string name="lyrics_queue_busy">歌词任务繁忙，请稍后重试</string>
+</resources>

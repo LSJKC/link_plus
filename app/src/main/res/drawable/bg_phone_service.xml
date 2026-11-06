@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 外观保持紧凑，完整控件仍保留四十八个逻辑像素的触控高度 -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android" android:insetTop="10dp" android:insetBottom="10dp">
+    <shape>
+        <solid android:color="@color/m3_pri_container" />
+        <corners android:radius="10dp" />
+    </shape>
+</inset>

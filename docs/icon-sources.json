@@ -1,0 +1,291 @@
+{
+  "repository": "https://github.com/ant-design/ant-design-icons",
+  "commit": "7f2516ac91226d2b41f93b35cb5197c8d94f7189",
+  "license": "MIT",
+  "icons": [
+    {
+      "resource": "ic_app_settings",
+      "source": "setting.svg",
+      "sha256": "316539db1b23299b57bc4cc60b2a739e7ee54b5663737934691162c152122930"
+    },
+    {
+      "resource": "ic_bluetooth",
+      "source": "本项目按统一网格补绘",
+      "license": "MIT"
+    },
+    {
+      "resource": "ic_brightness",
+      "source": "sun.svg",
+      "sha256": "a90367ddaadaddb51f7f30efbbc7963671e1d3b16f20df557b91c00d8949b23b"
+    },
+    {
+      "resource": "ic_car",
+      "source": "car.svg",
+      "sha256": "aaf086d23cc5aa1ec696795fc931c9e5142b8c0bec74e16893a2f6b44f0484e9"
+    },
+    {
+      "resource": "ic_check",
+      "source": "check.svg",
+      "sha256": "1fa2ba37760d16fcafc66adecddd71acd4a3cb450cd687596ff9a3c1b9882798",
+      "active": false
+    },
+    {
+      "resource": "ic_check_circle",
+      "source": "check-circle.svg",
+      "sha256": "2c81d85d084e127bd7ac340fd429e646f912215824df82db404e941997274848"
+    },
+    {
+      "resource": "ic_check_circle_small",
+      "source": "check-circle.svg",
+      "sha256": "2c81d85d084e127bd7ac340fd429e646f912215824df82db404e941997274848"
+    },
+    {
+      "resource": "ic_check_solid",
+      "source": "check-circle.svg",
+      "sha256": "2c81d85d084e127bd7ac340fd429e646f912215824df82db404e941997274848"
+    },
+    {
+      "resource": "ic_check_white",
+      "source": "check.svg",
+      "sha256": "1fa2ba37760d16fcafc66adecddd71acd4a3cb450cd687596ff9a3c1b9882798"
+    },
+    {
+      "resource": "ic_chev_down",
+      "source": "down.svg",
+      "sha256": "3cf2975b5777b25a9869e41080b73ed4fe31f0b134e51e4afb8f43bab1722ee5"
+    },
+    {
+      "resource": "ic_chev_left",
+      "source": "left.svg",
+      "sha256": "ad57185c76c87cde35f2df54c70ad5367000b01c9857971abed7a9d7f8fff088"
+    },
+    {
+      "resource": "ic_chev_right",
+      "source": "right.svg",
+      "sha256": "c89e39577920098b1f5cc19a68658ee99e8acfb39ccb48e4d642ddbad47a8683"
+    },
+    {
+      "resource": "ic_chevron_left",
+      "source": "left.svg",
+      "sha256": "ad57185c76c87cde35f2df54c70ad5367000b01c9857971abed7a9d7f8fff088"
+    },
+    {
+      "resource": "ic_close",
+      "source": "close.svg",
+      "sha256": "34b813eb580a390c9a2cadad9a30a9726777aea77972af3bdfd863bafd49994d"
+    },
+    {
+      "resource": "ic_copy",
+      "source": "copy.svg",
+      "sha256": "0bc0d2ced8b0467244d463cfa204cf325714fdc161d063fe180d6303d614cd0c"
+    },
+    {
+      "resource": "ic_doc",
+      "source": "file-text.svg",
+      "sha256": "22f564d830e6e8ec3c3baaf28052e339cac434029bf085bbb62aa2815d853426"
+    },
+    {
+      "resource": "ic_dock_dashboard",
+      "source": "dashboard.svg",
+      "sha256": "a3fd44aab63e947307e4f3674dd37715b6145b03772c6b2a5f9d738245c17dcc"
+    },
+    {
+      "resource": "ic_dock_home",
+      "source": "appstore.svg",
+      "sha256": "2cce2bccec8495ebd1d6823d320161267d88795f42326c91d610002ba209caa0"
+    },
+    {
+      "resource": "ic_dot",
+      "source": "本项目按统一网格补绘",
+      "license": "MIT",
+      "active": false
+    },
+    {
+      "resource": "ic_dot_small",
+      "source": "本项目按统一网格补绘",
+      "license": "MIT"
+    },
+    {
+      "resource": "ic_export",
+      "source": "export.svg",
+      "sha256": "ef1b09343e1652c7d5e1ea38cd91ec5b1835d6165c8e5cd092aca427b75df8a2"
+    },
+    {
+      "resource": "ic_info_circle",
+      "source": "info-circle.svg",
+      "sha256": "cced2651ccf823de57fc9ee850b114bc39ff5c3be29e3dad3672f176974a52c3"
+    },
+    {
+      "resource": "ic_media_next",
+      "source": "step-forward.svg",
+      "sha256": "1a1627a8dac2095afed844173a44424a83003a069a76ee94dc6187845640c1d0"
+    },
+    {
+      "resource": "ic_media_pause",
+      "source": "pause.svg",
+      "sha256": "3d3673b5fdaf71da00e05a8a4a42e54e3e7fe87e4796abe901bf9dfb8b1ba825"
+    },
+    {
+      "resource": "ic_media_play",
+      "source": "caret-right.svg",
+      "sha256": "270ed156abf4574d44d96823b9f25b2358d112f8c39218d902c2b732239d6bb0"
+    },
+    {
+      "resource": "ic_media_prev",
+      "source": "step-backward.svg",
+      "sha256": "847bac2b655ef0bf56916caf7fccaf3cb85032ae978f76841381caed0fdc0693"
+    },
+    {
+      "resource": "ic_menu_display",
+      "source": "desktop.svg",
+      "sha256": "72f97ea21382584049eba70511a1d799ed9aa91780fa3e7ba187e8a5e38d1fc9"
+    },
+    {
+      "resource": "ic_menu_dock",
+      "source": "本项目按统一网格补绘",
+      "license": "MIT"
+    },
+    {
+      "resource": "ic_menu_grid",
+      "source": "appstore.svg",
+      "sha256": "2cce2bccec8495ebd1d6823d320161267d88795f42326c91d610002ba209caa0"
+    },
+    {
+      "resource": "ic_menu_map",
+      "source": "environment.svg",
+      "sha256": "0b14ba7ec7e6bf1791f6e365300386b2254966cdd2f35d4f6ec007c8bfef9973"
+    },
+    {
+      "resource": "ic_menu_zoom",
+      "source": "zoom-in.svg",
+      "sha256": "96ce6cface3a8fd00b31e817aad0c40daefe8ec334c2074eb157e521e2bd8739"
+    },
+    {
+      "resource": "ic_moon",
+      "source": "moon.svg",
+      "sha256": "4ac4ba6e14fc90b169d752863272e3e8f7873d1f8c0136d841dd0f9926eea47e"
+    },
+    {
+      "resource": "ic_music",
+      "source": "customer-service.svg",
+      "sha256": "49354d684a67e34331351fe36c15cfa5aa32b90e6f4d39f8fcb62dcc63236637"
+    },
+    {
+      "resource": "ic_music_small",
+      "source": "customer-service.svg",
+      "sha256": "49354d684a67e34331351fe36c15cfa5aa32b90e6f4d39f8fcb62dcc63236637"
+    },
+    {
+      "resource": "ic_phone_home",
+      "source": "home.svg",
+      "sha256": "4cbf3b2a5e6b7af19fd39309804193ed385b7beb6efbab23ce2b420c2a4aceec"
+    },
+    {
+      "resource": "ic_phone_location",
+      "source": "environment.svg",
+      "sha256": "0b14ba7ec7e6bf1791f6e365300386b2254966cdd2f35d4f6ec007c8bfef9973"
+    },
+    {
+      "resource": "ic_phone_minus",
+      "source": "minus.svg",
+      "sha256": "1941d7e4bfc07a09ef29065823905cf479d5f1fc73a55ece4507ac4145d53b6c"
+    },
+    {
+      "resource": "ic_phone_notification",
+      "source": "bell.svg",
+      "sha256": "f8ac9dbc7c5c471ed1109e1c874443797a623314c93da0e0fb26b934eb3eb66b"
+    },
+    {
+      "resource": "ic_phone_plus",
+      "source": "plus.svg",
+      "sha256": "7941b0e679a43e40ca3a1d05f088934c341cebfceee744d5d6d2f87f83b7bb1d"
+    },
+    {
+      "resource": "ic_phone_settings",
+      "source": "setting.svg",
+      "sha256": "316539db1b23299b57bc4cc60b2a739e7ee54b5663737934691162c152122930"
+    },
+    {
+      "resource": "ic_play",
+      "source": "caret-right.svg",
+      "sha256": "270ed156abf4574d44d96823b9f25b2358d112f8c39218d902c2b732239d6bb0"
+    },
+    {
+      "resource": "ic_power",
+      "source": "poweroff.svg",
+      "sha256": "8336f13f511250f9f13b160549c9fc62b62a514557ed6cfebbf41d7a815eaab8"
+    },
+    {
+      "resource": "ic_refresh",
+      "source": "reload.svg",
+      "sha256": "759d20ce68e6c0e67a59c8769bf211b9894c9babbd6955440874d2d8b0712200"
+    },
+    {
+      "resource": "ic_restart",
+      "source": "sync.svg",
+      "sha256": "f67cdb26d3f2e0090593f514ca838cfab03bd7dfb1873218156337bccc4b2046"
+    },
+    {
+      "resource": "ic_screen_rotation",
+      "source": "本项目按统一网格补绘",
+      "license": "MIT"
+    },
+    {
+      "resource": "ic_shizuku_shield",
+      "source": "safety.svg",
+      "sha256": "f29bdabdf34555e278b22ccb570ab124b23a9dea83d6f55ab17dda3e0b7e7d50"
+    },
+    {
+      "resource": "ic_signal",
+      "source": "bar-chart.svg",
+      "sha256": "b94f32f1684d6184cc2f364513daa873e4fa33a5ccbd5eb6c3c8cd28682b4d1c"
+    },
+    {
+      "resource": "ic_speaker",
+      "source": "sound.svg",
+      "sha256": "376111a3b87408b27513604116980d6039a6b84551ae61f61106b0d5e9e1012b"
+    },
+    {
+      "resource": "ic_spinner",
+      "source": "loading.svg",
+      "sha256": "e87fd98975ab4468969502c83b7d908a9ad3784f90be2448413672175a7829f1",
+      "active": false
+    },
+    {
+      "resource": "ic_terminal",
+      "source": "code.svg",
+      "sha256": "95296bbe4088f1e37af2fb9fe1ed4fd7a66af4f55530d7c5bf0909773c855db1"
+    },
+    {
+      "resource": "ic_trash",
+      "source": "delete.svg",
+      "sha256": "d26ddb62c4b4f69756f7ba978ac36f489f50e72c8cdc758e73469994998124b2"
+    },
+    {
+      "resource": "ic_volume_off",
+      "source": "audio-muted.svg",
+      "sha256": "09a673e90b90202a39e6bf871455788bfb7eba55e66cb67095286babf945837c",
+      "active": false
+    },
+    {
+      "resource": "ic_volume_off_small",
+      "source": "audio-muted.svg",
+      "sha256": "09a673e90b90202a39e6bf871455788bfb7eba55e66cb67095286babf945837c"
+    },
+    {
+      "resource": "ic_wallpaper",
+      "source": "picture.svg",
+      "sha256": "f21bf48fe6df8acd181a4db67312f37178cda9de4809b5943ccc92e81438b5ef"
+    },
+    {
+      "resource": "ic_wifi",
+      "source": "wifi.svg",
+      "sha256": "d4ecce7ccc7e3727260cd92a42303720195f9611ae85710b564c9fdc242550cf"
+    },
+    {
+      "resource": "ic_launcher_foreground",
+      "source": "本项目补绘 L 与加号标志",
+      "license": "MIT"
+    }
+  ]
+}

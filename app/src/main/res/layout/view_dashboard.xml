@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 仪表盘音乐卡与桌面共享单一模糊壁纸，卡片只叠加语义色面板和描边 -->
+<LinearLayout
+    android:orientation="vertical"
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+        <LinearLayout
+            android:id="@+id/dashWidgetToolbar"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:orientation="horizontal"
+            android:visibility="gone">
+            <TextView
+                android:id="@+id/dashShowWidget"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:background="?android:attr/selectableItemBackground"
+                android:text="@string/dashboard_widget_tab"
+                android:textColor="@color/m3_primary"
+                android:textSize="14sp" />
+            <TextView
+                android:id="@+id/dashShowLyrics"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:background="?android:attr/selectableItemBackground"
+                android:text="@string/dashboard_lyrics_tab"
+                android:textColor="@color/m3_on_surface"
+                android:textSize="14sp" />
+        </LinearLayout>
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+            <io.github.shaonialife.buicklinkplus.launcher.DashboardWidgetView
+                android:id="@+id/dashWidgetContent"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="gone" />
+            <LinearLayout
+                android:id="@+id/dashMediaFallback"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center_horizontal"
+                android:orientation="vertical"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp">
+                <!-- 上半部按剩余高度伸缩，歌词预览不挤压播放控件 -->
+                <io.github.shaonialife.buicklinkplus.media.MusicPreviewView
+                    android:id="@+id/dashMusicPreview"
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:layout_marginBottom="4dp" />
+                <!-- 静态小标题不能写「正在播放」：它不随状态变化，会和下方状态文案
+             （「未在播放」/「无法读取播放信息」）直接矛盾（2026-10-19 截图实测）。
+             中性的「媒体」标签，具体状态交给标题/副标题两行表达。 -->
+                <TextView
+                    android:id="@+id/dashMediaLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:letterSpacing="0.1"
+                    android:text="@string/ui_text_fa33e1000975"
+                    android:textColor="@color/m3_on_surface"
+                    android:textSize="13sp" />
+                <TextView
+                    android:id="@+id/dashMediaTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:ellipsize="end"
+                    android:gravity="center"
+                    android:maxLines="1"
+                    android:text="@string/ui_text_770de45df4a8"
+                    android:textColor="@color/m3_on_surface"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+                <TextView
+                    android:id="@+id/dashMediaArtist"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:ellipsize="end"
+                    android:gravity="center"
+                    android:maxLines="1"
+                    android:text="@string/ui_text_38924e86f41e"
+                    android:textColor="@color/m3_on_surface"
+                    android:textSize="12sp" />
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+                    <ImageView
+                        android:id="@+id/dashPrev"
+                        android:layout_width="46dp"
+                        android:layout_height="46dp"
+                        android:background="?android:attr/selectableItemBackgroundBorderless"
+                        android:importantForAccessibility="no"
+                        android:padding="8dp"
+                        android:src="@drawable/ic_media_prev" />
+                    <ImageView
+                        android:id="@+id/dashPlayPause"
+                        android:layout_width="64dp"
+                        android:layout_height="64dp"
+                        android:layout_marginStart="16dp"
+                        android:layout_marginEnd="16dp"
+                        android:importantForAccessibility="no"
+                        android:padding="8dp"
+                        android:src="@drawable/ic_media_play" />
+                    <ImageView
+                        android:id="@+id/dashNext"
+                        android:layout_width="46dp"
+                        android:layout_height="46dp"
+                        android:background="?android:attr/selectableItemBackgroundBorderless"
+                        android:importantForAccessibility="no"
+                        android:padding="8dp"
+                        android:src="@drawable/ic_media_next" />
+                </LinearLayout>
+                <ProgressBar
+                    android:id="@+id/dashMediaProgress"
+                    style="?android:attr/progressBarStyleHorizontal"
+                    android:layout_width="match_parent"
+                    android:layout_height="4dp"
+                    android:layout_marginTop="10dp"
+                    android:max="1000"
+                    android:progressDrawable="@drawable/bg_media_progress"
+                    android:visibility="gone" />
+                <TextView
+                    android:id="@+id/dashMediaTime"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:fontFeatureSettings="tnum"
+                    android:text="@string/ui_text_3c01addf522e"
+                    android:textColor="@color/m3_on_surface"
+                    android:textSize="11.5sp" />
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="8dp" />
+            </LinearLayout>
+        </FrameLayout>
+
+</LinearLayout>

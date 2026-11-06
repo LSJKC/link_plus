@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 桌面应用格子：应用图标与当前主题的玻璃标签 -->
+<!-- 第三方应用图标独立加载和圆角裁剪，名称与图标各自测量 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:paddingStart="6dp"
+    android:paddingEnd="6dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="8dp" tools:ignore="UseCompoundDrawables">
+
+    <ImageView
+        android:id="@+id/cellIcon"
+        android:layout_width="96dp"
+        android:layout_height="96dp"
+        android:importantForAccessibility="no" />
+
+    <TextView
+        android:id="@+id/cellLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:gravity="center"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:paddingStart="6dp"
+        android:paddingEnd="6dp"
+        android:paddingTop="1dp"
+        android:paddingBottom="1dp"
+        android:textColor="@color/m3_on_surface"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+</LinearLayout>
