@@ -6,10 +6,15 @@ package io.github.shaonialife.buicklinkplus.capture
 import android.content.Context
 import android.os.SystemClock
 import android.view.Surface
+import io.github.shaonialife.buicklinkplus.carlife.CarLifeAudioSink
 import io.github.shaonialife.buicklinkplus.carlife.CarLifeHuClient
+import io.github.shaonialife.buicklinkplus.carlife.CarLifeNav
 import io.github.shaonialife.buicklinkplus.carlife.CarLifeProtocol
 import io.github.shaonialife.buicklinkplus.carlife.CarLifeVideoDecoder
 import io.github.shaonialife.buicklinkplus.carlife.CarLifeVideoPipeline
+import io.github.shaonialife.buicklinkplus.input.CarLifeTouchSink
+import io.github.shaonialife.buicklinkplus.render.CarLifeComposer
+import io.github.shaonialife.buicklinkplus.render.CarLifeWallpaperSource
 import io.github.shaonialife.buicklinkplus.render.DisplayGeometry
 import io.github.shaonialife.buicklinkplus.util.LogThrottle
 import java.util.concurrent.ExecutorService
@@ -25,10 +30,14 @@ import java.util.concurrent.atomic.AtomicReference
  *
  * 生命周期：[attach] 只存参数、起一条后台管理线程并立即返回（CarLife 引擎通常还没起来，
  * 用户手动打开 CarLife+ 的「无线连接」后才可用）；管理线程循环创建 [CarLifeHuClient]，
- * 连不上就每 2s 重试，连上后持续转发视频帧、断线后自动收尾重连。[detach] 只做置停止态/
- * 关 socket/拒绝新解码任务等 O(1) 操作就立即返回，解码器与管理线程的 stop/join 交给 daemon
- * 清理线程（本方法在 SessionController 的 synchronized 锁内调用，阻塞会有主线程 ANR 风险）；
- * 幂等，之后再次 [attach] 可重新工作。
+ * 连不上就每 2s 重试，连上后持续转发视频帧、断线后自动收尾重连。[detach] 同步停解码器
+ * （≤800ms，保证 release 返回后解码线程不再渲染编码器 Surface），把管理线程 join/音频桥
+ * 停止等慢操作交给 daemon 清理线程；幂等，之后再次 [attach] 可重新工作。
+ *
+ * P2 音频直通：可选的 [audioSink]（[CarLifeAudioSink]，由 SessionController 创建注入）接住
+ * [CarLifeHuClient] 的媒体 9240 / TTS 9241 回调，统一成 48kHz 立体声 1408B 实时包后喂给
+ * [io.github.shaonialife.buicklinkplus.audio.AudioSender] 的外部 PCM 模式；sink 为空时音频
+ * 回调静默丢弃，不影响视频主链路。
  *
  * 视频路径（全部不阻塞 CarLife 视频读线程）：
  * ```
@@ -79,6 +88,31 @@ class CarLifeScreenSource(
     var lastErrorText: String = ""
         private set
 
+    /**
+     * 可选音频桥（P2 音频直通）：由 SessionController 创建并注入；null = 不处理 CarLife 音频。
+     *
+     * 生命周期由内容源管理线程驱动：CarLife 握手成功后 [CarLifeAudioSink.start]，
+     * 断线时 [CarLifeAudioSink.reset]，[detach] 时 [CarLifeAudioSink.stop]。音频 SETUP 由
+     * SessionController 独立协商，AudioSender 未起时音频桥只丢包、不影响视频。
+     */
+    @Volatile
+    var audioSink: CarLifeAudioSink? = null
+
+    /**
+     * 可选触摸下沉（P3）：由 SessionController 创建并注入，并同步注册到
+     * [io.github.shaonialife.buicklinkplus.input.TouchRouter]；CarLife 客户端
+     * 握手成功后把自身交给 sink（9340 触摸通道），断线/退役时解绑。
+     */
+    @Volatile
+    var touchSink: CarLifeTouchSink? = null
+
+    /**
+     * 可选导航出口（P4）：CarLife 0x10030 解析后的转向/距离快照。
+     * 由 SessionController 接线到 [CarLifeNav.submitNextTurn]；null = 不处理导航。
+     */
+    @Volatile
+    var navSink: ((CarLifeNav.NextTurn) -> Unit)? = null
+
     private val lock = Any()
 
     /** 当前（最近一次 attach 的）会话；detach 时先置空，旧回调凭引用比对自动失效。 */
@@ -106,9 +140,18 @@ class CarLifeScreenSource(
                 width,
                 height,
                 targetFps,
+                geometry,
                 noDecodeWatchdog = NoDecodeWatchdog(NO_DECODE_WARN_MS, NO_DECODE_WARN_INTERVAL_MS),
                 retiringLog = LogThrottle(RETIRING_LOG_INTERVAL_MS),
             )
+        // P1B 合成器：壁纸 + 安全区 contain + 圆角；GL 启动放在管理线程，避免占住
+        // SessionController 的会话锁。启动失败时回退 P1A 直出（decoder 写编码器 Surface）。
+        newSession.composer =
+            CarLifeComposer(surface, log = { line -> log(line) }).apply {
+                this.targetFps = targetFps
+                updateLayout(geometry, width, height)
+            }
+        log("CARLIFE-COMPOSER: 合成器待启动（壁纸+安全区 contain+圆角；失败回退直出）")
         newSession.pipeline =
             CarLifeVideoPipeline(
                 object : CarLifeVideoPipeline.Listener {
@@ -148,8 +191,6 @@ class CarLifeScreenSource(
         doomed.active = false
         synchronized(doomed.lock) { doomed.lock.notifyAll() }
         log("CARLIFE: 停止内容源（客户端/解码器/管理线程）")
-        // 快速路径：本方法在 SessionController 的 synchronized 锁内调用（取消/断开），任何 join
-        // 都会顶到主线程；所以这里只做 O(1) 的「让各线程尽快收敛」动作，慢路径见 cleanupDetached。
         // 先停客户端以解除 socket 读写阻塞，管理线程才能尽快退出。
         val client = doomed.client
         doomed.client = null
@@ -164,35 +205,59 @@ class CarLifeScreenSource(
         doomed.decoderEpoch.incrementAndGet()
         doomed.pendingKeyFrame = null
         val decoder = doomed.decoder.getAndSet(null)
+        val audio = audioSink
+        audioSink = null
+        // P1B：先停解码器（下面同步等），再停合成器；两者都必须在 SessionController 释放
+        // 编码器输入 Surface 之前完成，否则 GL/解码线程会操作已释放的 Surface。
+        val composer = doomed.composer
+        doomed.composer = null
+        val wallpaper = doomed.wallpaperSource
+        doomed.wallpaperSource = null
         // 诊断字段立即复位：旧会话回调都带 isCurrent(session) 闸门，不会再把它们改回去。
         isEngineConnected = false
         streamWidth = 0
         streamHeight = 0
-        // 慢路径（解码线程 join / 管理线程 join / 收尾日志）交给 daemon 线程：只捕获 doomed
+        // C0（审计修复）：release() 返回前**同步**等解码器停下（≤800ms），保证 SessionController
+        // 随后释放编码器输入 Surface 时解码线程已不在渲染——异步停会和 Surface 释放竞态。
+        // 管理线程 join / 音频桥停止放到 daemon 清理线程，避免在 SessionController 锁内等 1.5s。
+        if (decoder != null) {
+            val exited = decoder.stopAndWait(DECODER_STOP_TIMEOUT_MS)
+            if (!exited || decoder.isThreadAlive()) {
+                doomed.retiringGate.retire(decoder)
+                log(
+                    "CARLIFE-VIDEO: 解码线程未在 ${DECODER_STOP_TIMEOUT_MS}ms 内退出" +
+                        "（release 已同步尽力等待，余下由解码线程自然收尾）",
+                )
+            }
+        }
+        // 解码已停 → 合成器不再有新输入；停掉 GL 线程后才允许 SessionController 释放编码器 Surface。
+        if (composer != null) {
+            runCatching { composer.stop() }
+            log("CARLIFE-COMPOSER: 合成器已停止")
+        }
+        wallpaper?.stop()
+        // 慢路径（管理线程 join / 音频桥停止 / 收尾日志）交给 daemon 线程：只捕获 doomed
         // 这一代会话的引用，因此绝不会碰到随后 attach 的新会话。
-        Thread({ cleanupDetached(doomed, decoder) }, DETACH_THREAD_NAME).apply {
+        Thread({ cleanupDetached(doomed, audio) }, DETACH_THREAD_NAME).apply {
             isDaemon = true
             start()
         }
     }
 
     /**
-     * [detach] 的慢路径（daemon 线程）：停解码器、等管理线程退出，然后打收尾日志。
+     * [detach] 的慢路径（daemon 线程）：停音频桥、等管理线程退出，然后打收尾日志。
      *
-     * 只使用捕获的 [session] 引用，与随后 [attach] 的新会话完全隔离；即使超时也只会给
-     * 已退役会话挂退休门并打日志，不会阻塞或弄脏新会话。
+     * 只使用捕获的 [session]/[audioSink] 引用，与随后 [attach] 的新会话完全隔离。
      */
     private fun cleanupDetached(
         session: Session,
-        decoder: CarLifeVideoDecoder?,
+        audioSink: CarLifeAudioSink?,
     ) {
-        val target = decoder ?: session.retiringGate.retiring
-        if (target != null) {
-            val exited = target.stopAndWait(DECODER_STOP_TIMEOUT_MS)
-            if (!exited || target.isThreadAlive()) {
-                // 旧线程仍可能渲染：挂门（本会话已退役，仅保留引用让 GC 在它退出后回收），不泄漏 Surface。
-                session.retiringGate.retire(target)
-                log("CARLIFE-VIDEO: 解码线程未在 ${DECODER_STOP_TIMEOUT_MS}ms 内退出")
+        audioSink?.stop()
+        // 之前重建超时挂门的旧解码器：这里再给一次异步停止机会（不阻塞 release 调用方）。
+        session.retiringGate.retiring?.let { old ->
+            if (!old.stopAndWait(DECODER_STOP_TIMEOUT_MS)) {
+                log("CARLIFE-VIDEO: 退休解码线程仍未退出（daemon 清理线程放弃等待）")
             }
         }
         val manager = session.manager
@@ -216,6 +281,7 @@ class CarLifeScreenSource(
     private fun manage(session: Session) {
         val pipeline = session.pipeline ?: return
         logForSession(session, "CARLIFE: 管理线程启动（等待 CarLife+ 打开无线连接）")
+        ensureComposer(session)
         // 连接失败重试的原样日志会被「7 端口 × 每 2s」刷屏，这里限流：首次立即一行，之后最多每 10s 一行。
         val waitLog = LogThrottle(RETRY_LOG_INTERVAL_MS)
         var retryCount = 0L
@@ -230,9 +296,29 @@ class CarLifeScreenSource(
                     onVideoParams = { width, height, fps ->
                         logForSession(session, "CARLIFE: 协商编码参数 ${width}x$height@${fps}fps")
                     },
+                    onNaviTurn = { nextTurn -> navSink?.invoke(nextTurn) },
                     onStreamSize = { width, height ->
                         logForSession(session, "CARLIFE: 客户端 SPS 实测 ${width}x$height")
                     },
+                    // ---- P2 音频直通：媒体 9240 / TTS 9241 → 可选 CarLifeAudioSink →
+                    // AudioSender 外部 PCM 模式。sink 为空（未开启声音/未注入）时全部丢弃。 ----
+                    onAudioFormat = { sampleRate, channels ->
+                        if (isCurrent(session)) audioSink?.configureMedia(sampleRate, channels)
+                    },
+                    onAudioPcm = { pcm, size ->
+                        if (isCurrent(session)) audioSink?.writeMedia(pcm, size)
+                    },
+                    onTtsFormat = { sampleRate, channels ->
+                        if (isCurrent(session)) audioSink?.configureTts(sampleRate, channels)
+                    },
+                    onTtsPcm = { pcm, size ->
+                        if (isCurrent(session)) audioSink?.writeTts(pcm, size)
+                    },
+                    onAudioGate = { active ->
+                        if (isCurrent(session)) audioSink?.setAudioGate(active)
+                    },
+                    // 音频沉默看门狗（9240 长时间零 PCM 才重连）的「应该有声音」判据。
+                    audioExpected = { isCurrent(session) && audioSink?.isAudioExpected() == true },
                     requestedFps = session.fps,
                     initialWidth = session.width,
                     initialHeight = session.height,
@@ -275,10 +361,14 @@ class CarLifeScreenSource(
             setLastError(session, "")
             setEngineConnected(session, true)
             session.lastFrameAt = SystemClock.uptimeMillis()
+            // P3：客户端已握手 → 触摸 sink 可下发 9340（未连接时保持解绑）。
+            touchSink?.setSender(client)
             // 解码进度看门狗基线：以本轮连接时的累计解码帧为起点，避免把上一轮进度算进来。
             val framesAtConnect = session.framesReceived
             session.noDecodeWatchdog.reset(deliveredFrames)
             logForSession(session, "CARLIFE: carlife connected 127.0.0.1（握手成功，等待视频帧）")
+            // P2：引擎连接建立后启动音频水泵（无声时按节拍发静音包保活接收端音频管线）。
+            audioSink?.start()
             var lastNoVideoWarnAt = 0L
             while (session.active && isCurrent(session) && client.isRunning) {
                 sleepWhileActive(session, STATUS_POLL_MS)
@@ -321,14 +411,50 @@ class CarLifeScreenSource(
             }
             client.stop()
             session.client = null
+            touchSink?.setSender(null)
             teardownDecoder(session)
             pipeline.reset()
+            // 音频：清掉上一轮排队的 PCM/TTS 残留，等待新连接重新宣告格式（水泵保持运行）。
+            audioSink?.reset()
             if (!session.active || !isCurrent(session)) break
             sleepWhileActive(session, RETRY_DELAY_MS)
         }
         teardownDecoder(session)
         setEngineConnected(session, false)
         logForSession(session, "CARLIFE: 管理线程退出")
+    }
+
+    /**
+     * 启动 P1B 合成器（管理线程上执行，GL 启动最多等 4s，不占会话锁）。
+     *
+     * 成功：解码器输出改到 [CarLifeComposer.inputSurface]（SurfaceTexture）；
+     * 失败：保持直出（解码器输出到 VideoSender 编码器 Surface），只少了壁纸/安全区/圆角。
+     */
+    private fun ensureComposer(session: Session) {
+        if (!session.active || !isCurrent(session)) return
+        val composer = session.composer ?: return
+        if (composer.isRunning) return
+        val started =
+            try {
+                composer.start()
+            } catch (error: Throwable) {
+                logForSession(session, "CARLIFE-COMPOSER: 启动异常 - ${error.message ?: error.javaClass.simpleName}")
+                false
+            }
+        if (!started) {
+            logForSession(session, "CARLIFE-COMPOSER: 启动失败，回退 P1A 直出（无壁纸/安全区/圆角）")
+            return
+        }
+        session.decoderSurface = composer.inputSurface()
+        logForSession(
+            session,
+            "CARLIFE-COMPOSER: 合成器已启动 canvas=${session.width}x${session.height} " +
+                "content=${session.geometry.content} radius=${composer.cornerRadiusPx}",
+        )
+        // 壁纸：用户当前壁纸按画布 cover 预合成；加载失败由合成器回退纯色底。
+        val wallpaper = CarLifeWallpaperSource(context, log = { line -> logForSession(session, line) })
+        session.wallpaperSource = wallpaper
+        wallpaper.start(session.width, session.height) { bitmap -> composer.setWallpaper(bitmap) }
     }
 
     // ---- 视频路径：管线回调 → 解码器生命周期 ----
@@ -375,6 +501,8 @@ class CarLifeScreenSource(
         streamWidth = width
         streamHeight = height
         logForSession(session, "CARLIFE-VIDEO: 码流真实尺寸 ${width}x$height（编码器 ${session.width}x${session.height}）")
+        // 合成器布局先跟随 SPS 实测尺寸（SurfaceTexture 缓冲尺寸也在此同步），再决定是否重建解码器。
+        session.composer?.updateLayout(session.geometry, width, height)
         val decoder = session.decoder.get() ?: return
         if (width != session.appliedWidth || height != session.appliedHeight) {
             logFit(session, width, height)
@@ -385,7 +513,7 @@ class CarLifeScreenSource(
     /** 调度创建解码器（单线程执行器、去重、失败后退避 2s 再试）。 */
     private fun scheduleDecoderCreate(session: Session) {
         if (!session.active || !isCurrent(session)) return
-        if (!session.surface.isValid) {
+        if (!session.decoderSurface.isValid) {
             noteSurfaceInvalid(session)
             return
         }
@@ -450,7 +578,7 @@ class CarLifeScreenSource(
         if (!session.active || !isCurrent(session) || session.decoderEpoch.get() != epoch) return
         // 双重保险：调度后到真正执行之间可能又有解码器被停超时挂门（退休门是唯一放行依据）。
         if (!canCreateDecoder(session)) return
-        if (!session.surface.isValid) {
+        if (!session.decoderSurface.isValid) {
             noteSurfaceInvalid(session)
             return
         }
@@ -467,7 +595,7 @@ class CarLifeScreenSource(
                 size.first,
                 size.second,
                 session.fps,
-                session.surface,
+                session.decoderSurface,
                 DecoderCallbacks(session),
             )
         decoder.setCsd(sps, pps)
@@ -642,6 +770,7 @@ class CarLifeScreenSource(
             height: Int,
         ) {
             if (!isCurrent(session)) return
+            session.composer?.updateLayout(session.geometry, width, height)
             logForSession(session, "CARLIFE-VIDEO: 解码输出格式 ${width}x$height（编码器 ${session.width}x${session.height}）")
             logFit(session, width, height)
         }
@@ -683,6 +812,8 @@ class CarLifeScreenSource(
         val width: Int,
         val height: Int,
         val fps: Int,
+        /** 会话显示几何（画布/安全区 content rect），合成器布局与触摸映射共用。 */
+        val geometry: DisplayGeometry,
         /** 持续收帧但无解码输出的看门狗状态机（纯逻辑，可 JVM 单测）。 */
         val noDecodeWatchdog: NoDecodeWatchdog,
         /** 退休门推迟日志限流（旧解码线程长时间不退时避免每 1s 刷一行）。 */
@@ -694,6 +825,18 @@ class CarLifeScreenSource(
 
         @Volatile
         var active = true
+
+        /** P1B 合成器（壁纸+安全区 contain+圆角）；null 或启动失败时直出。 */
+        @Volatile
+        var composer: CarLifeComposer? = null
+
+        /** 壁纸来源（随 WallpaperStore 变化自动重载）。 */
+        @Volatile
+        var wallpaperSource: CarLifeWallpaperSource? = null
+
+        /** 解码器输出目标：合成器 inputSurface，或启动失败时回退为编码器 Surface。 */
+        @Volatile
+        var decoderSurface: Surface = surface
 
         @Volatile
         var client: CarLifeHuClient? = null

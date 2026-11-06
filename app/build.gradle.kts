@@ -42,6 +42,10 @@ android {
         buildConfigField("String", "BUILD_ID", "\"buick-$appVersionName-$appVersionCode\"")
         // Android 正则兼容用例使用设备测试
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        ndk {
+            // 只打包手机常用 ABI，去掉 x86/x86_64 以缩小 APK；模拟器验证需单独构建
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
     }
 
     signingConfigs {
@@ -97,6 +101,12 @@ android {
     packaging {
         // 排除密码库中重复的 JVM OSGi 描述
         resources.excludes += "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
+        // 本工程只用 bcprov 的基础算法（AES/Ed25519/X25519/SHA/HKDF），
+        // 未使用 PQC（Picnic 查表约 1.2MB）和证书路径审查文案，运行时不需要这些资源
+        resources.excludes += "org/bouncycastle/pqc/**"
+        resources.excludes += "org/bouncycastle/x509/CertPathReviewerMessages*"
+        // bcpkix 已移除；防御性排除其包资源（若将来被间接引入也不会进包）
+        resources.excludes += "org/bouncycastle/pkix/**"
     }
 
     lint {
@@ -123,13 +133,9 @@ dependencies {
     implementation("androidx.viewpager2:viewpager2:1.1.0")
     //noinspection GradleDependency,NewerVersionAvailable
     implementation("androidx.recyclerview:recyclerview:1.3.2")
-    // AirPlay 配对和加密
+    // AirPlay 配对和加密（AES/HKDF/Ed25519/X25519/ChaCha20-Poly1305）
     //noinspection GradleDependency,NewerVersionAvailable
     implementation("org.bouncycastle:bcprov-jdk18on:1.81.1")
-    //noinspection GradleDependency,NewerVersionAvailable
-    implementation("org.conscrypt:conscrypt-android:2.8.0")
-    //noinspection GradleDependency,NewerVersionAvailable
-    implementation("org.bouncycastle:bcpkix-jdk18on:1.81.1")
 
     testImplementation("junit:junit:4.13.2")
     // 为 JVM 测试提供 JSON 实现

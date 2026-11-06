@@ -94,39 +94,16 @@
             android:configChanges="uiMode"
             android:exported="false" />
 
-        <!-- 官方组件授权始终在手机主屏进行，不授予静默绑定权限 -->
-        <activity android:name=".launcher.DashboardWidgetBindActivity" android:exported="false" />
+        <!-- 官方组件授权始终在手机主屏进行，不授予静默绑定权限。
+             CarLife 版本已下线 link_plus 桌面组件入口（绑定 Activity 保留代码但不再注册） -->
 
         <service
             android:name=".service.CarPlayService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice|mediaProjection" />
 
-        <!-- 虚拟屏桌面（exported：shell am start 需要可从外部拉起） -->
-        <activity
-            android:name=".launcher.DockActivity"
-            android:configChanges="uiMode"
-            android:exported="true"
-            android:launchMode="singleTask"
-            android:excludeFromRecents="true"
-            android:theme="@style/Theme.CarPlaySender.Launcher" />
-
-        <activity
-            android:name=".launcher.GridActivity"
-            android:configChanges="uiMode"
-            android:exported="true"
-            android:launchMode="singleTask"
-            android:excludeFromRecents="true"
-            android:theme="@style/Theme.CarPlaySender.Launcher" />
-
-        <activity
-            android:name=".launcher.MapStatusActivity"
-            android:configChanges="uiMode"
-            android:exported="true"
-            android:launchMode="singleTop"
-            android:taskAffinity="${applicationId}.mapStatus"
-            android:excludeFromRecents="true"
-            android:theme="@style/Theme.CarPlaySender.Launcher" />
+        <!-- link_plus 原桌面页（Dock/Grid/MapStatus）与车机双栏设置已下线：
+             对应类保留在源码中供后续清理，但不再注册为 Activity -->
 
         <!-- 通知监听（媒体会话枚举）：音乐卡需要「通知使用权」；
              内置服务就绪时可由 cmd notification allow_listener 静默授权 -->
@@ -139,13 +116,5 @@
             </intent-filter>
         </service>
 
-        <!-- 车机设置（双栏）：由桌面「车机设置」图标进入，仅应用内使用 -->
-        <activity
-            android:name=".launcher.SettingsActivity"
-            android:configChanges="uiMode"
-            android:exported="false"
-            android:launchMode="singleTop"
-            android:excludeFromRecents="true"
-            android:theme="@style/Theme.CarPlaySender.Settings" />
     </application>
 </manifest>

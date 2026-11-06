@@ -21,6 +21,11 @@ import java.util.concurrent.atomic.AtomicBoolean
  * PT 使用流类型，SSRC 为 0，时间戳按样本递增，首包置 Marker
  * 每秒向 controlPort 发送 [AudioSyncPacket]，建立 RTP 与 NTP 的对应关系
  * 格式参考 catplay rtp_cipher_chacha 和 DiPlay AudioStream
+ *
+ * 两种数据来源：
+ * - 默认：[start] 用 MediaProjection 的播放捕获（AudioPlaybackCapture）采集本机声音；
+ * - 外部 PCM：[startExternal] + [feedExternalPcm]（CarLife 引擎 9240/9241 直通），
+ *   不启动 MediaProjection 采集，复用同一套封包/加密/同步包/发送路径。
  */
 class AudioSender(
     private val host: String,
@@ -117,19 +122,39 @@ class AudioSender(
 
     @Volatile private var capturing = false
 
+    /** 外部 PCM 直通模式（CarLife）：不启动 MediaProjection 采集，数据由 [feedExternalPcm] 注入。 */
+    @Volatile
+    private var externalMode = false
+
+    /** 外部注入 PCM 的帧对齐累积缓冲（切满一帧就按采集路径封包/发送）。 */
+    private val externalBuffer = java.io.ByteArrayOutputStream()
+
+    /** 最近一次外部注入真实 PCM 的时刻（uptimeMillis，诊断用）。 */
+    @Volatile
+    private var lastExternalFeedAt = 0L
+
+    /** 外部注入累计包/字节/TTS 字节（诊断用）。 */
+    private var externalPackets = 0L
+    private var externalBytes = 0L
+    private var externalTtsBytes = 0L
+
     private val syncState = AudioSyncState()
     private val started = AtomicBoolean(false)
     val isRunning: Boolean get() = running.get()
 
+    /** 当前是否为外部 PCM 直通模式（诊断/会话日志用）。 */
+    val isExternalMode: Boolean get() = externalMode
+
     /** 报告采集和发送阶段，静音或暂停不记为采集失败 */
     fun status(): String =
-        "采集：${if (capturing) {
-            "运行中"
-        } else if (isRunning) {
-            "启动中"
-        } else {
-            "已停止"
-        }}" +
+        "采集：${
+            when {
+                externalMode -> "外部PCM直通（CarLife）"
+                capturing -> "运行中"
+                isRunning -> "启动中"
+                else -> "已停止"
+            }
+        }" +
             " · 发送：$packetsSent 包 / ${bytesSent / 1024} KB · 同步：${syncState.status}"
 
     @Volatile
@@ -245,6 +270,72 @@ class AudioSender(
         }
     }
 
+    /**
+     * 启动**外部 PCM 直通模式**（CarLife 引擎音频 → RTP，**不启动 MediaProjection 采集**）。
+     *
+     * 数据由 [feedExternalPcm] 注入（[io.github.shaonialife.buicklinkplus.carlife.CarLifeAudioSink]
+     * 已把 9240 媒体 / 9241 TTS 统一成 48kHz 立体声 1408B 实时包）。本模式只建立 UDP 数据
+     * 套接字、可选的 AAC 编码器和同步包线程，复用与采集路径完全一致的封包/加密/发送逻辑；
+     * 不申请录音/投屏权限，也不静音手机媒体（CarLife 引擎自己负责采集）。
+     *
+     * @return 是否已进入发送循环
+     */
+    fun startExternal(): Boolean {
+        if (!started.compareAndSet(false, true)) return running.get()
+        if (running.get()) return true
+        if (stopped.get()) return false
+        return try {
+            val client = DatagramSocket()
+            synchronized(resourceLock) {
+                if (stopped.get()) {
+                    client.close()
+                    return false
+                }
+                socket = client
+            }
+            client.connect(InetAddress.getByName(host), dataPort)
+
+            // AAC 通路仍需要编码器（注入的是 PCM，编码照常）；失败就不进入发送循环。
+            if (codec == AudioCodec.AAC_LC) {
+                val encoder = AacLcEncoder(sampleRate, CHANNELS, wrapAdts = adtsFrames, log = log)
+                if (!encoder.start()) {
+                    client.close()
+                    socket = null
+                    return false
+                }
+                synchronized(resourceLock) {
+                    if (stopped.get()) {
+                        encoder.stop()
+                        return false
+                    }
+                    aacEncoder = encoder
+                }
+            }
+
+            synchronized(resourceLock) {
+                if (stopped.get()) return false
+                externalMode = true
+                running.set(true)
+            }
+            log(
+                "AUDIO: 已启动外部 PCM 直通模式（CarLife 引擎 PCM → $host:$dataPort，" +
+                    "通路=t$streamType/${codec.name}，目标 ${sampleRate}Hz " +
+                    if (codec == AudioCodec.AAC_LC) {
+                        "（每包 1 个 AAC 帧${if (adtsFrames) "，ADTS 封装" else "，裸帧"}，不采集 MediaProjection）"
+                    } else {
+                        "立体声（每包 ${SAMPLES_PER_PACKET} 帧 PCM，不采集 MediaProjection）"
+                    },
+            )
+            // 同步包线程先起：锚点越早建立，接收端越早能排播。
+            startSyncLoop()
+            true
+        } catch (error: Exception) {
+            log("AUDIO: 外部 PCM 直通启动失败 - ${error.message}")
+            stop()
+            false
+        }
+    }
+
     /** 停止音频并恢复手机音量，可重复调用 */
     fun stop() {
         if (!stopped.compareAndSet(false, true)) return
@@ -267,9 +358,132 @@ class AudioSender(
                 Bg.run("media-mute-release") { MediaMuteController.release(ctx, muteToken, log) }
             }
             capturing = false
+            externalMode = false
+            externalBuffer.reset()
+            if (externalPackets > 0L) {
+                log("AUDIO: 外部 PCM 累计发送 $externalPackets 帧包 / ${externalBytes / 1024}KB（其中 TTS 注入 $externalTtsBytes B）")
+            }
+            lastExternalFeedAt = 0L
             log("AUDIO: 已停止（共发 $packetsSent 包 / ${bytesSent / 1024}KB）")
             sourceProjection = null
         }
+    }
+
+    // ---- 外部 PCM 直通：CarLife 引擎 PCM 注入 → 采集路径同一套封包/发送 ----
+
+    /**
+     * 直通模式下由外部注入一段 PCM（16bit 小端交织）。
+     *
+     * 会先把任意采样率/声道数对齐到本发送端的 [sampleRate]/[CHANNELS]（CarLife 音频桥已经
+     * 统一到 48kHz 立体声，正常情况下走零拷贝快路径），再按固定帧长（PCM 通路每包
+     * [SAMPLES_PER_PACKET] 帧、AAC 通路每帧 [AacLcEncoder.FRAME_SAMPLES] 帧）累积切帧，
+     * 交给与采集循环一致的 [sendPayload]（RTP 头 + ChaCha20-Poly1305 + nonce）。
+     *
+     * **必须同步**：媒体（9240）与 TTS（9241）虽然由音频桥先混好再单线程送包，但保留
+     * `@Synchronized` 防止其它调用方并发注入造成半帧交错。
+     *
+     * @param pcm 输入 PCM（16bit 小端交织）
+     * @param size 有效字节数
+     * @param srcSampleRate 输入采样率（<=0 = 与 [sampleRate] 相同，不重采样）
+     * @param srcChannels 输入声道数（1 或 2；其它按 2 处理）
+     * @param isTts 仅用于诊断统计（TTS 已由音频桥 duck/mix 进媒体包，正常传 false）
+     * @return false = 未在外部模式/发送失败
+     */
+    @Synchronized
+    fun feedExternalPcm(
+        pcm: ByteArray,
+        size: Int,
+        srcSampleRate: Int = 0,
+        srcChannels: Int = CHANNELS,
+        isTts: Boolean = false,
+    ): Boolean {
+        if (!running.get() || !externalMode) return false
+        if (size <= 0 || size > pcm.size) return false
+        lastExternalFeedAt = android.os.SystemClock.uptimeMillis()
+        if (isTts) externalTtsBytes += size
+        val aligned = alignExternalPcm(pcm, size, srcSampleRate, srcChannels)
+        if (aligned.isEmpty()) return false
+        externalBuffer.write(aligned, 0, aligned.size)
+        val frameBytes = framePcmBytes
+        var ok = true
+        while (externalBuffer.size() >= frameBytes) {
+            val all = externalBuffer.toByteArray()
+            val frame = all.copyOfRange(0, frameBytes)
+            externalBuffer.reset()
+            if (all.size > frameBytes) externalBuffer.write(all, frameBytes, all.size - frameBytes)
+            if (!dispatchExternalFrame(frame)) {
+                ok = false
+                break
+            }
+        }
+        return ok
+    }
+
+    /** 外部注入的 PCM 对齐到发送端格式（参考 CarPToCarL AudioSender.alignPcm 的移植）。 */
+    private fun alignExternalPcm(
+        src: ByteArray,
+        size: Int,
+        srcRate: Int,
+        srcChannels: Int,
+    ): ByteArray {
+        val inRate = if (srcRate > 0) srcRate else sampleRate
+        val inCh = if (srcChannels == 1) 1 else CHANNELS
+        // 声道对齐：单声道 → 立体声（左右复制同一采样）。
+        val rateAligned: ByteArray
+        if (inCh == 1) {
+            val monoFrames = size / 2
+            val out = ByteArray(monoFrames * CHANNELS * 2)
+            var i = 0
+            var o = 0
+            while (i + 1 < size) {
+                val lo = src[i]
+                val hi = src[i + 1]
+                out[o] = lo
+                out[o + 1] = hi
+                out[o + 2] = lo
+                out[o + 3] = hi
+                i += 2
+                o += 4
+            }
+            rateAligned = out
+        } else {
+            rateAligned = if (size == src.size) src else src.copyOf(size)
+        }
+        if (inRate == sampleRate) return rateAligned
+        // 线性重采样（frame = 所有声道的一组采样）。CarLife 桥已做跨包相位连续，这里只兜底。
+        val inFrames = rateAligned.size / (CHANNELS * 2)
+        val outFrames = (inFrames.toLong() * sampleRate / inRate).toInt()
+        val out = ByteArray(outFrames * CHANNELS * 2)
+        val frameBytes = CHANNELS * 2
+        for (frame in 0 until outFrames) {
+            val srcPos = (frame.toLong() * inRate / sampleRate).toInt()
+            val srcByte = srcPos * frameBytes
+            if (srcByte + frameBytes <= rateAligned.size) {
+                System.arraycopy(rateAligned, srcByte, out, frame * frameBytes, frameBytes)
+            }
+        }
+        return out
+    }
+
+    /** 一帧 PCM → 编码（AAC 通路）/原样（PCM 通路）→ [sendPayload]。 */
+    private fun dispatchExternalFrame(frame: ByteArray): Boolean {
+        val payloads: List<ByteArray> =
+            if (codec == AudioCodec.AAC_LC) {
+                val encoder = aacEncoder ?: return false
+                encoder.encode(frame, frame.size)
+            } else {
+                listOf(frame)
+            }
+        if (payloads.isEmpty()) return true
+        for (payload in payloads) {
+            if (!sendPayload(payload)) return false
+        }
+        externalPackets++
+        externalBytes += frame.size
+        if (externalPackets == 1L) {
+            log("AUDIO: 外部 PCM 首帧包已发送（每包 ${framePcmBytes}B，通路 t$streamType/${codec.name}）")
+        }
+        return true
     }
 
     /** 使用用户已授权的系统媒体采集方式（内置服务采集通道已随无线 ADB 激活移除） */

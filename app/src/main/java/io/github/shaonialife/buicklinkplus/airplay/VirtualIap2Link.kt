@@ -4,6 +4,7 @@ import android.content.Context
 import io.github.shaonialife.buicklinkplus.iap2.Iap2Csm
 import io.github.shaonialife.buicklinkplus.iap2.Iap2LinkEngine
 import io.github.shaonialife.buicklinkplus.iap2.Iap2MessageIds
+import io.github.shaonialife.buicklinkplus.iap2.Iap2SenderSession
 import io.github.shaonialife.buicklinkplus.iap2.MfiCertificateHint
 import io.github.shaonialife.buicklinkplus.iap2.MfiLengthMemory
 import io.github.shaonialife.buicklinkplus.iap2.ReceiverProfile
@@ -11,6 +12,9 @@ import io.github.shaonialife.buicklinkplus.input.ConsumerKeys
 import java.security.SecureRandom
 import java.util.TimeZone
 import java.util.UUID
+
+/** 0x5203 StopRouteGuidanceUpdates（与 Iap2SenderSession 内部常量同义）。 */
+private const val STOP_ROUTE_GUIDANCE_UPDATES = 0x5203
 
 /**
  * AirPlay 上的虚拟 iAP2 链路，按接收端分流
@@ -555,11 +559,61 @@ class VirtualIap2Link(
     }
 
     /**
+     * 0x5200 / 0x5203 导航订阅（从 AirPlay 虚拟 iAP2 链路）→ 注入 BT iAP2 会话。
+     *
+     * 解析方式与 [io.github.shaonialife.buicklinkplus.iap2.Iap2SenderSession] 的
+     * `onRouteGuidanceStarted` 保持一致：参数 0 = u16 组件（可重复），参数 1..5 为空表示
+     * mask 位 p1..p3/p4/p5；不合法时只记日志、不改订阅状态。
+     */
+    private fun forwardRouteGuidanceSubscription(frame: Iap2Csm.Frame) {
+        val session = Iap2SenderSession.active
+        if (frame.messageId == STOP_ROUTE_GUIDANCE_UPDATES) {
+            log("IAPLINK: rx 0x5203 停止导航订阅（${frame.body.size}B）→ 注入 BT 会话")
+            session?.markRouteGuidanceUnsubscribed()
+            return
+        }
+        val components = ArrayList<Int>()
+        var mask = 0
+        for (param in Iap2Csm.parseParams(frame.body)) {
+            when {
+                param.id == 0 -> {
+                    if (param.value.size != 2) {
+                        log("IAPLINK: rx 0x5200 组件参数长度异常（${param.value.size}B），整条忽略")
+                        return
+                    }
+                    components += ((param.value[0].toInt() and 0xFF) shl 8) or (param.value[1].toInt() and 0xFF)
+                }
+
+                param.id in 1..5 -> {
+                    if (param.value.isNotEmpty()) {
+                        log("IAPLINK: rx 0x5200 参数 ${param.id} 非空，整条忽略")
+                        return
+                    }
+                    val bit = 1 shl (if (param.id <= 3) param.id - 1 else param.id)
+                    mask = mask or bit
+                }
+
+                else -> Unit
+            }
+        }
+        log("IAPLINK: rx 0x5200 导航订阅 components=$components mask=0x${mask.toString(16)} → 注入 BT 会话")
+        session?.markRouteGuidanceSubscribed(components, mask)
+    }
+
+    /**
      * 处理隧道和 MIB3 的身份识别、MFi 认证及订阅
      * 0x1D01 → 0x1D02 + 0xAA00，0xAA06 → 0xAA00，0xAA01 → 0xAA02，0xAA03 → 0xAA05
      * MIB3 订阅返回对应空态；0xEA02、0xA101 和 0xFFFB 只由链路层 ACK
      */
     private fun maybeRespondControlCsmLocked(frame: Iap2Csm.Frame) {
+        // P4 导航：真车（Buick E2LB）的 0x5200/0x5203 订阅从 AirPlay 虚拟 iAP2 链路进来，
+        // 而 0x5201/0x5202 由 BT 会话下发（复刻 hybrid63 行为）。这里把订阅状态注入 BT 会话，
+        // 让 Iap2SenderSession 的发送闸门放行；帧本身仍交给后续逻辑处理。
+        if (frame.messageId == Iap2MessageIds.START_ROUTE_GUIDANCE_UPDATES ||
+            frame.messageId == STOP_ROUTE_GUIDANCE_UPDATES
+        ) {
+            forwardRouteGuidanceSubscription(frame)
+        }
         val onTunnel = tunnelWriter() != null
         // 车机发起方形态复用 MIB3 那套识别/MFi 骨架（出站同样走控制通道）
         val mib3 = (mib3Armed || eventLinkArmed) && !onTunnel

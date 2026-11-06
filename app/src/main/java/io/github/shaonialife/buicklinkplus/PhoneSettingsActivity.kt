@@ -72,7 +72,7 @@ class SettingsContentActivity :
     SettingsToastHost {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val requestedMenu = intent.getIntExtra(EXTRA_MENU, SettingsMenus.DESKTOP)
+        val requestedMenu = intent.getIntExtra(EXTRA_MENU, SettingsMenus.CONNECTION)
         val menuId = SettingsMenus.directPhonePanel(requestedMenu) ?: requestedMenu
         setContentView(R.layout.activity_settings_content)
         findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
@@ -128,7 +128,7 @@ class SettingsContentActivity :
                 Intent(context, SettingsContentActivity::class.java)
                     .putExtra(EXTRA_MENU, SettingsMenus.directPhonePanel(item.id) ?: item.id)
                     .apply {
-                        // 手机配置使用新任务，避免把承载仪表盘的车机任务一起移到主屏
+                        // 手机配置使用新任务，避免把承载车机设置的窗口一起移到主屏
                         if (onPhone) {
                             addFlags(
                                 Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK or

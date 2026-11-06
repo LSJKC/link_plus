@@ -14,10 +14,14 @@ import io.github.shaonialife.buicklinkplus.bt.Iap2BluetoothServer
 import io.github.shaonialife.buicklinkplus.bt.TargetDevicePrefs
 import io.github.shaonialife.buicklinkplus.capture.CarLifeScreenSource
 import io.github.shaonialife.buicklinkplus.capture.ScreenSource
+import io.github.shaonialife.buicklinkplus.carlife.CarLifeAudioSink
+import io.github.shaonialife.buicklinkplus.carlife.CarLifeNav
+import io.github.shaonialife.buicklinkplus.carlife.CarLifeNavAmap
 import io.github.shaonialife.buicklinkplus.compat.Shell
 import io.github.shaonialife.buicklinkplus.iap2.Iap2MessageIds
 import io.github.shaonialife.buicklinkplus.iap2.Iap2SenderSession
 import io.github.shaonialife.buicklinkplus.iap2.ReceiverProfile
+import io.github.shaonialife.buicklinkplus.input.CarLifeTouchSink
 import io.github.shaonialife.buicklinkplus.input.ConsumerKeys
 import io.github.shaonialife.buicklinkplus.input.TouchReports
 import io.github.shaonialife.buicklinkplus.input.TouchRouter
@@ -162,6 +166,35 @@ object SessionController {
         AppOrientationCompat.diagSink = ::appendLog
         // 主线程 shell 调用写入文件日志，方便排查 ANR（本版本无 shell，仅保留诊断出口）
         Shell.violationSink = ::appendLog
+        // P4 导航 iAP2 接线：CarLife 0x10030（内置百度导航）→ CarLifeNav → 0x5201/0x5202；
+        // 只有车机发过 0x5200 订阅才真正下发（由 Iap2SenderSession.navSendAllowed 把关）。
+        CarLifeNav.log = ::appendLog
+        CarLifeNav.sink = { message ->
+            Iap2SenderSession.active?.sendNavMessage(message.messageId, message.payload) == true
+        }
+        CarLifeNavAmap.log = ::appendLog
+        CarLifeNavAmap.onHud = { turn, remainMeters, totalMeters, road ->
+            CarLifeNav.submitHud(turn, remainMeters, totalMeters, road)
+        }
+        CarLifeNavAmap.onStop = { CarLifeNav.stop() }
+        Iap2SenderSession.activeListener = { active ->
+            if (active == null) {
+                appendLog("NAV: iAP2 会话结束，停止导航数据源")
+                CarLifeNav.stop()
+                CarLifeNavAmap.stop()
+            } else {
+                appendLog("NAV: iAP2 会话就绪（订阅=${active.navSubscribed} 组件=${active.navComponents}）")
+                active.onRouteGuidanceStart = { components, mask ->
+                    appendLog("NAV: 车机订阅 0x5200 components=$components mask=$mask → 启动 AMap 数据源")
+                    appContext?.let { CarLifeNavAmap.start(it) }
+                }
+                active.onRouteGuidanceStop = {
+                    appendLog("NAV: 车机 0x5203 停止订阅 → 清空导航")
+                    CarLifeNav.stop()
+                    CarLifeNavAmap.stop()
+                }
+            }
+        }
     }
 
     /** 追加日志到文件、缓冲和界面，任意线程可调用 */
@@ -555,6 +588,7 @@ object SessionController {
         audioSender = null
         currentSharedSecret = null
         currentAudioHost = null
+        TouchRouter.clearCarLifeSink()
         TouchRouter
             .reset()
         // 配对开始也会调用这里，保留 BT 控制连接；用户断开时再释放
@@ -1163,7 +1197,9 @@ object SessionController {
             appendLog("AUDIO: 无接收端可用地址，跳过音频通道")
             return false
         }
-        val projection = CarPlayService.mediaProjection
+        // CarLife 内容源的音频由引擎 9240/9241 本地 TCP 提供，走 AudioSender 外部 PCM 模式，
+        // 不依赖 MediaProjection / 录音授权；只有遗留的采集路径才需要 projection。
+        val carLifeExternalAudio = currentScreenSource is CarLifeScreenSource
         return try {
             // 车机身份 → 只用于「本车机哪些音频档位踩过雷」的持久化记忆。
             val identity = client.receiverIdentity()
@@ -1242,7 +1278,14 @@ object SessionController {
                     controlPort = audio.controlPort,
                 )
             audioSender = sender
-            if (!sender.start(projection)) {
+            val started =
+                if (carLifeExternalAudio) {
+                    appendLog("AUDIO: 外部 PCM 直通模式（CarLife 引擎音频，不启动 MediaProjection 采集）")
+                    sender.startExternal()
+                } else {
+                    sender.start(CarPlayService.mediaProjection)
+                }
+            if (!started) {
                 audioSender = null
                 activeAudioProfile = null
                 activeAudioStartedAt = 0L
@@ -2036,11 +2079,24 @@ object SessionController {
                                                 // 唯一内容源：手机 CarLife+ 的 H.264 码流（P1A 直出）。
                                                 // 本版本已移除内置无线 ADB/shell，原「隐形屏」虚拟屏桌面不再可用，
                                                 // 也不再提供内容源开关；画面只来自 CarLife 本地 TCP 通道。
-                                                val source: ScreenSource =
+                                                val carLifeSource =
                                                     CarLifeScreenSource(
                                                         context.applicationContext,
                                                         log = { line -> appendLog(line) },
                                                     )
+                                                // P2 音频：CarLife 9240 媒体 / 9241 TTS PCM → AudioSender 外部 PCM
+                                                carLifeSource.audioSink =
+                                                    CarLifeAudioSink(
+                                                        log = { line -> appendLog(line) },
+                                                        senderProvider = { audioSender },
+                                                    )
+                                                // P3 触摸：车机触摸 → CarLife 9340（安全区 contain 坐标映射）
+                                                val carLifeTouch = CarLifeTouchSink(log = ::appendLog)
+                                                carLifeSource.touchSink = carLifeTouch
+                                                TouchRouter.setCarLifeSink(carLifeTouch)
+                                                // P4 导航：0x10030 → CarLifeNav 缓冲/去重 → iAP2 0x5201/0x5202
+                                                carLifeSource.navSink = { nextTurn -> CarLifeNav.submitNextTurn(nextTurn) }
+                                                val source: ScreenSource = carLifeSource
                                                 currentScreenSource = source
                                                 val ok =
                                                     source.attach(

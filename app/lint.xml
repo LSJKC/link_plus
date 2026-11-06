@@ -4,8 +4,4 @@
     <issue id="AndroidGradlePluginVersion">
         <ignore path="../gradle/wrapper/gradle-wrapper.properties" />
     </issue>
-    <!-- 内置无线 ADB 激活已移除，libadb 依赖不再引入；bcpkix 的 EST 信任辅助实现未被本工程调用 -->
-    <issue id="TrustAllX509TrustManager">
-        <ignore regexp=".*[/\\]org\.bouncycastle[/\\]bcpkix-jdk18on[/\\]1\.81\.1[/\\].*[/\\]bcpkix-jdk18on-1\.81\.1\.jar" />
-    </issue>
 </lint>

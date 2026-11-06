@@ -1,6 +1,7 @@
 package io.github.shaonialife.buicklinkplus.input
 
 import android.content.Context
+import android.graphics.Rect
 import io.github.shaonialife.buicklinkplus.compat.CarInputClient
 import io.github.shaonialife.buicklinkplus.input.TouchReports.Contact
 import io.github.shaonialife.buicklinkplus.launcher.CardGesture
@@ -92,11 +93,70 @@ object TouchRouter {
     private var geometry: DisplayGeometry? = null
     private val safeGesture = SafeGestureGate()
 
+    /**
+     * CarLife 本地内容源的触摸 sink（P3）：非 null = 当前画面来源是 CarLife，
+     * 所有触摸改走 CarLife 9340 触摸通道，不再走虚拟屏/shell 注入路径。
+     *
+     * 接线由 SessionController 在创建/退役 `CarLifeScreenSource` 时调用
+     * [setCarLifeSink] / [clearCarLifeSink] 完成；未接入时保持既有路径不变。
+     */
+    @Volatile
+    private var carLifeSink: CarLifeTouchSink? = null
+
+    /** 当前触摸是否由 CarLife 通道消费（诊断用）。 */
+    val isCarLifeTouchActive: Boolean get() = carLifeSink != null
+
     /** 使用与合成器相同的视图、流和安全区几何 */
     @Synchronized
     fun setGeometry(value: DisplayGeometry) {
         geometry = value
         safeGesture.reset()
+        // CarLife 已接入时同步触摸映射窗格（编码流坐标域 + 原版安全区语义）
+        carLifeSink?.let { refreshCarLifeViewport(it) }
+    }
+
+    /**
+     * 接线：CarLife 内容源成为当前画面来源时调用；传 null（或 [clearCarLifeSink]）解除，
+     * 触摸回到既有虚拟屏/shell 路由（现已降级为空操作）。
+     *
+     * 调用时机建议（SessionController）：`CarLifeScreenSource.attach` 成功后 set，
+     * `retireSession`/`TouchRouter.reset` 之前 clear。
+     */
+    @Synchronized
+    fun setCarLifeSink(sink: CarLifeTouchSink?) {
+        val previous = carLifeSink
+        if (previous === sink) return
+        previous?.cancel()
+        carLifeSink = sink
+        if (sink == null) {
+            logSink?.invoke("TOUCH: CarLife 触摸路由已解除（回到无 ADB 空操作路径）")
+        } else {
+            refreshCarLifeViewport(sink)
+            logSink?.invoke("TOUCH: 触摸路由切换到 CarLife 9340（${sink.statusText()}）")
+        }
+    }
+
+    /** 解除 CarLife 触摸路由（等价于 `setCarLifeSink(null)`）。 */
+    @Synchronized
+    fun clearCarLifeSink() = setCarLifeSink(null)
+
+    /** CarLife 触摸状态摘要（诊断导出用）。 */
+    fun carLifeTouchStatus(): String = carLifeSink?.statusText() ?: "未接入 CarLife 触摸"
+
+    /**
+     * 把当前几何同步给 CarLife sink。
+     *
+     * 坐标系与合成分屏/安全区保持一致：viewport 用编码流画布（DisplayGeometry.canvas），
+     * 窗格用安全区内容层 rect（DisplayGeometry.content），源尺寸由 sink 跟随
+     * CarLifeHuClient.videoSize（SPS 优先）动态取得。
+     */
+    private fun refreshCarLifeViewport(sink: CarLifeTouchSink) {
+        val g = geometry ?: return
+        sink.updateViewport(
+            g.canvasWidth,
+            g.canvasHeight,
+            Rect(g.content.left, g.content.top, g.content.right, g.content.bottom),
+        )
     }
 
     @Synchronized
@@ -104,6 +164,14 @@ object TouchRouter {
         context: Context,
         contact: Contact,
     ) {
+        // P3：CarLife 成为当前画面来源时，触摸改走本机 CarLife 引擎的 9340 通道。
+        // 原始 HID 报告会持续重发槽状态，sink 内部自己区分 DOWN/MOVE 并支持第二指；
+        // 不经过 contactTracker（它只保留单个活动槽，会吞掉双指手势）。
+        val carLife = carLifeSink
+        if (carLife != null) {
+            routeToCarLife(carLife, contact)
+            return
+        }
         // 按活动槽区分占位和释放，不能因坐标为原点就丢掉真实抬起
         if (!contactTracker.accept(contact)) return
         if (!contact.down) gesture.deferRelease()
@@ -425,6 +493,8 @@ object TouchRouter {
         }
         gestureBinder = null
         contactTracker.reset()
+        // 会话收尾：CarLife 侧有按住的手指就补发 UP，避免引擎留下幽灵触点
+        carLifeSink?.cancel()
         overlayPressed = false
         splitHandlePressed = false
         cancelMapTileTap()
@@ -432,6 +502,30 @@ object TouchRouter {
         geometry = null
         safeGesture.reset()
         lastInjectAt = 0L
+    }
+
+    // ---- P3：CarLife 触摸路由 ----
+
+    /**
+     * 车机显示坐标 → 编码流坐标（与合成器/安全区同一 DisplayGeometry）→ CarLife sink。
+     * 输入是 [Contact] 的显示像素域（TouchReports 已按车机 display 尺寸换算）。
+     */
+    private fun routeToCarLife(
+        sink: CarLifeTouchSink,
+        contact: Contact,
+    ) {
+        val g = geometry
+        if (g == null) {
+            diag("CarLife 触摸：DisplayGeometry 未就绪，忽略点位 (${contact.xPixels},${contact.yPixels}) down=${contact.down}")
+            return
+        }
+        val x = g.streamX(contact.xPixels)
+        val y = g.streamY(contact.yPixels)
+        if (contact.down) {
+            sink.down(x, y, contact.slot)
+        } else {
+            sink.up(x, y, contact.slot)
+        }
     }
 
     // ---- 仪表盘地图 tile「快速点按 → 全屏地图」检测 ----

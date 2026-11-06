@@ -87,13 +87,43 @@ class Iap2SenderSession(
     /** 与诊断日志共用能力判定，未知清单保留旧协议尝试 */
     private var wifiGeneration = ReceiverProfile.WifiGen.UNKNOWN
 
+    /**
+     * 车机 0x5200 StartRouteGuidanceUpdates 订阅状态。
+     *
+     * 固件要求：只有收到 0x5200 订阅后才应该发 0x5201/0x5202；0x5203 停止订阅、链路结束时清空。
+     */
+    @Volatile
+    var navSubscribed: Boolean = false
+        private set
+
+    /** 最近一次 0x5200 参数 0 声明的显示组件（u16 列表；真车是 1=Cluster、2=CardView）。 */
+    @Volatile
+    var navComponents: List<Int> = emptyList()
+        private set
+
+    /**
+     * 0x5200 到达回调（组件表 + mask 位）。
+     *
+     * SessionController 接线时设置：收到订阅后再启动导航数据源（CarLife 0x10030 或 AMap），
+     * 并用 [sendNavRouteGuidanceUpdate]/[sendNavManeuverUpdate] 把编码好的负载发下去。
+     */
+    @Volatile
+    var onRouteGuidanceStart: ((components: List<Int>, mask: Int) -> Unit)? = null
+
+    /** 0x5203 停止订阅回调（导航结束/车机退出导航界面）。 */
+    @Volatile
+    var onRouteGuidanceStop: (() -> Unit)? = null
+
+    /** 导航放行日志只打一次（跨链路订阅/声明回退时提示，避免每秒刷屏）。 */
+    private var navGateLogged = false
+
     /** 车机是否声明会发某消息；null = 未提供清单（未知，按保守策略等待）。 */
     private fun accessoryDeclaresSend(messageId: Int): Boolean? = if (accessorySendIds.isEmpty()) null else messageId in accessorySendIds
 
     /** 车机是否声明能收某消息；null = 未提供清单（未知，按保守策略继续）。 */
     private fun accessoryDeclaresReceive(messageId: Int): Boolean? = if (!receiveListDeclared) null else messageId in accessoryReceiveIds
 
-    private companion object {
+    companion object {
         /** 等 StartHID 的窗口：xcertplay 会发（订阅后立即到），DiPlay 不发。 */
         const val HID_WAIT_NANOS = 2_000_000_000L
 
@@ -117,6 +147,35 @@ class Iap2SenderSession(
 
         /** 真车系接收端特征（0x1D01 name/model/manufacturer 子串，小写比对）。 */
         private val LEGACY_RECEIVER_MARKERS = listOf("audi", "delphi", "mib", "harman", "porsche")
+
+        /** iAP2 0x5201 路线指引更新 / 0x5202 机动点更新（附录 ch16 §2.2/§2.3）。 */
+        const val ROUTE_GUIDANCE_UPDATE = 0x5201
+        const val MANEUVER_UPDATE = 0x5202
+
+        /** 0x5203 StopRouteGuidanceUpdates（车机停止订阅导航）。 */
+        private const val STOP_ROUTE_GUIDANCE_UPDATES = 0x5203
+
+        /** 当前处于保活阶段、可用于下发导航更新的会话；链路断开后为 null。 */
+        @Volatile
+        private var activeSession: Iap2SenderSession? = null
+
+        /**
+         * SessionController 接线入口：当前保活中的 BT iAP2 会话。
+         *
+         * 会话由蓝牙链路建立后创建，在 [Iap2SenderSession.pumpIncomingForever] 期间登记。车机 0x5200
+         * 订阅可能早于登记到达，接线方拿到会话后应再查一次 [Iap2SenderSession.navSubscribed]。
+         */
+        val active: Iap2SenderSession?
+            get() = activeSession
+
+        /** 会话进入/退出保活阶段时通知（SessionController 启动时注册一次即可）。 */
+        @Volatile
+        var activeListener: ((Iap2SenderSession?) -> Unit)? = null
+
+        private fun registerActive(session: Iap2SenderSession?) {
+            activeSession = session
+            activeListener?.invoke(session)
+        }
     }
 
     /** 提取车机 name、model 和 manufacturer，转小写后用于选择 MFi 挑战长度 */
@@ -379,40 +438,48 @@ class Iap2SenderSession(
     /** 握手后保持蓝牙链路，持续处理控制消息直到断开 */
     fun pumpIncomingForever() {
         log("SESSION 保活中（链路保持打开，持续记录配件消息）")
-        // 同一消息 ID 连续到达时限流：车机进入媒体播放后会周期性发 NowPlaying 更新，
-        // 逐条打日志会把文件日志撑爆（文件超 2MB 直接删，等于丢掉真正有用的上下文）。
-        var lastLoggedId = -1
-        var repeatCount = 0
-        while (true) {
-            val frame = recvFrame(30_000L)
-            if (frame == null) {
-                if (!channel.isAlive) break
-                continue
-            }
-            // 先处理生命周期消息再限流，避免丢掉迟到或重复的 0x4301
-            if (frame.messageId == Iap2MessageIds.CARPLAY_START_SESSION) {
-                handleLateStartSession(frame)
-            }
-            if (frame.messageId == Iap2MessageIds.START_HID) {
-                respondToStartHid(frame)
-                continue
-            }
-            if (frame.messageId == lastLoggedId) {
-                repeatCount++
-                if (repeatCount % 100 != 0) continue
-            } else {
-                if (repeatCount >= 99) {
-                    log("iap2 上一条 0x${lastLoggedId.toString(16)} 重复 ${repeatCount + 1} 次（同类已限流）")
+        registerActive(this)
+        try {
+            // 同一消息 ID 连续到达时限流：车机进入媒体播放后会周期性发 NowPlaying 更新，
+            // 逐条打日志会把文件日志撑爆（文件超 2MB 直接删，等于丢掉真正有用的上下文）。
+            var lastLoggedId = -1
+            var repeatCount = 0
+            while (true) {
+                val frame = recvFrame(30_000L)
+                if (frame == null) {
+                    if (!channel.isAlive) break
+                    continue
                 }
-                lastLoggedId = frame.messageId
-                repeatCount = 0
+                // 先处理生命周期消息再限流，避免丢掉迟到或重复的 0x4301
+                if (frame.messageId == Iap2MessageIds.CARPLAY_START_SESSION) {
+                    handleLateStartSession(frame)
+                }
+                if (frame.messageId == Iap2MessageIds.START_HID) {
+                    respondToStartHid(frame)
+                    continue
+                }
+                if (frame.messageId == lastLoggedId) {
+                    repeatCount++
+                    if (repeatCount % 100 != 0) continue
+                } else {
+                    if (repeatCount >= 99) {
+                        log("iap2 上一条 0x${lastLoggedId.toString(16)} 重复 ${repeatCount + 1} 次（同类已限流）")
+                    }
+                    lastLoggedId = frame.messageId
+                    repeatCount = 0
+                }
+                log(
+                    "iap2 rx=0x${frame.messageId.toString(16).padStart(4, '0')} " +
+                        "(${Iap2MessageIds.nameOf(frame.messageId)}) keep-alive bytes=${frame.body.size}",
+                )
             }
-            log(
-                "iap2 rx=0x${frame.messageId.toString(16).padStart(4, '0')} " +
-                    "(${Iap2MessageIds.nameOf(frame.messageId)}) keep-alive bytes=${frame.body.size}",
-            )
+        } finally {
+            // 断链后导航订阅作废：下次 0x5200 之前不允许再发 0x5201/0x5202。
+            navSubscribed = false
+            navComponents = emptyList()
+            registerActive(null)
+            log("SESSION 保活结束（链路断开）")
         }
-        log("SESSION 保活结束（链路断开）")
     }
 
     /** 保活期间解析迟到的 0x4301 并通知主控，无 0x5703 时从无线组读取热点凭据 */
@@ -612,6 +679,147 @@ class Iap2SenderSession(
         log("iap2 tx=0x${messageId.toString(16).padStart(4, '0')}（发后不管）")
     }
 
+    // ---- 导航 iAP2 上行（0x5201/0x5202，P4） ----
+
+    /**
+     * 发 0x5201 路线指引更新（负载由 [io.github.shaonialife.buicklinkplus.carlife.CarLifeNav] 编码）。
+     *
+     * 只有「车机发过 0x5200 订阅」或「车机识别帧声明可收 0x5201」时才发送（见 [navSendAllowed]）；
+     * 负载为空/链路已断返回 false。发送不阻塞：链路层只入队，ACK 由链路线程处理。
+     */
+    fun sendNavRouteGuidanceUpdate(payload: ByteArray): Boolean = sendNavMessage(ROUTE_GUIDANCE_UPDATE, payload)
+
+    /** 发 0x5202 机动点更新（负载由 CarLifeNav 编码）。语义同 [sendNavRouteGuidanceUpdate]。 */
+    fun sendNavManeuverUpdate(payload: ByteArray): Boolean = sendNavMessage(MANEUVER_UPDATE, payload)
+
+    /** 按消息 ID 发导航更新；[messageId] 只接受 0x5201/0x5202。 */
+    fun sendNavMessage(
+        messageId: Int,
+        payload: ByteArray,
+    ): Boolean {
+        if (messageId != ROUTE_GUIDANCE_UPDATE && messageId != MANEUVER_UPDATE) return false
+        if (!navSendAllowed()) return false
+        if (payload.isEmpty()) return false
+        return try {
+            send(messageId, payload)
+            true
+        } catch (error: Exception) {
+            log("iap2 tx=0x${messageId.toString(16)} 导航更新发送失败：${error.message}")
+            false
+        }
+    }
+
+    /** 观察 0x5200/0x5203：维护订阅状态并通知接线方；不消费帧（帧仍交给原 expect/保活流程）。 */
+    private fun observeRouteGuidance(frame: Iap2Csm.Frame) {
+        when (frame.messageId) {
+            Iap2MessageIds.START_ROUTE_GUIDANCE_UPDATES -> onRouteGuidanceStarted(frame)
+            STOP_ROUTE_GUIDANCE_UPDATES -> onRouteGuidanceStopped(frame)
+        }
+    }
+
+    /**
+     * 0x5200 StartRouteGuidanceUpdates：参数 0 是 u16 显示组件（可重复），参数 1..5 必须是空载荷
+     * （设置 mask 位：p1..p3 → bit0..2、p4/p5 → bit4/5），≥6 只记日志后忽略。
+     * 参数布局不合法时按固件语义整条忽略、不改订阅状态。
+     *
+     * 真车样例（Buick E2LB，2026-11-05 23:28:43，走 AirPlay 虚拟 iAP2 链路）：
+     * body 24B，`params=0:2B, 0:2B, 1:0B, 2:0B, 3:0B` → 两个 u16 组件（真车通常是 1/2；
+     * 导出日志 hex 被脱敏，值未直接可见）+ mask 位 p1/p2/p3 置位。
+     */
+    private fun onRouteGuidanceStarted(frame: Iap2Csm.Frame) {
+        val components = ArrayList<Int>()
+        var mask = 0
+        for (param in Iap2Csm.parseParams(frame.body)) {
+            when {
+                param.id == 0 -> {
+                    if (param.value.size != 2) {
+                        log("iap2 rx=0x5200 组件参数长度异常（${param.value.size}B），整条忽略")
+                        return
+                    }
+                    components += ((param.value[0].toInt() and 0xFF) shl 8) or (param.value[1].toInt() and 0xFF)
+                }
+
+                param.id in 1..5 -> {
+                    if (param.value.isNotEmpty()) {
+                        log("iap2 rx=0x5200 参数 ${param.id} 非空，整条忽略")
+                        return
+                    }
+                    val bit = 1 shl (if (param.id <= 3) param.id - 1 else param.id)
+                    if (mask and bit != 0) {
+                        log("iap2 rx=0x5200 参数 ${param.id} 重复，整条忽略")
+                        return
+                    }
+                    mask = mask or bit
+                }
+
+                else -> Unit
+            }
+        }
+        val routeDeclared = accessoryDeclaresReceive(ROUTE_GUIDANCE_UPDATE)
+        val maneuverDeclared = accessoryDeclaresReceive(MANEUVER_UPDATE)
+        log(
+            "iap2 rx=0x5200 导航订阅 components=$components mask=0x${mask.toString(16)} " +
+                "车机可收 0x5201=${routeDeclared?.let { if (it) "是" else "否" } ?: "未知"} " +
+                "0x5202=${maneuverDeclared?.let { if (it) "是" else "否" } ?: "未知"}",
+        )
+        navComponents = components
+        navSubscribed = true
+        onRouteGuidanceStart?.invoke(components, mask)
+    }
+
+    /** 0x5203 StopRouteGuidanceUpdates：停止导航更新；参数只记日志。 */
+    private fun onRouteGuidanceStopped(frame: Iap2Csm.Frame) {
+        log("iap2 rx=0x5203 停止导航订阅（${frame.body.size}B）")
+        navSubscribed = false
+        navComponents = emptyList()
+        onRouteGuidanceStop?.invoke()
+    }
+
+    /**
+     * 由其它 iAP2 链路注入 0x5200 订阅（SessionController 接线用）。
+     *
+     * 真车日志（Buick E2LB，2026-11-05/06）显示：车机的 0x5200 订阅是从 **AirPlay 虚拟 iAP2 链路**
+     * 进来的（`IAPLINK: rx 0x5200`），BT iAP2 链路本身收不到。若上层从
+     * [io.github.shaonialife.buicklinkplus.airplay.VirtualIap2Link] 侧解析到订阅，可调本方法把
+     * 订阅状态同步给 BT 会话，让 [sendNavRouteGuidanceUpdate] 放行。
+     */
+    @Synchronized
+    fun markRouteGuidanceSubscribed(
+        components: List<Int>,
+        mask: Int,
+    ) {
+        navComponents = components
+        val wasSubscribed = navSubscribed
+        navSubscribed = true
+        if (!wasSubscribed) onRouteGuidanceStart?.invoke(components, mask)
+    }
+
+    /** 由其它 iAP2 链路注入 0x5203 停止订阅。 */
+    @Synchronized
+    fun markRouteGuidanceUnsubscribed() {
+        navSubscribed = false
+        navComponents = emptyList()
+        onRouteGuidanceStop?.invoke()
+    }
+
+    /**
+     * 导航更新是否允许发出。
+     *
+     * 首选「本链路收到 0x5200 订阅」（固件语义）；但真车证据显示订阅可能走另一条 iAP2 链路
+     * （AirPlay 虚拟链路），BT 链路收不到——此时若车机在识别帧（0x1D01 参数 7）明确声明
+     * 可接收 0x5201，就按旧工程行为放行（旧工程就是从 BT 链路直接发 0x5201，早于订阅 4s+）。
+     * 车机未声明能力清单时仍严格等 0x5200。
+     */
+    private fun navSendAllowed(): Boolean {
+        if (navSubscribed) return true
+        val declared = accessoryDeclaresReceive(ROUTE_GUIDANCE_UPDATE) == true
+        if (declared && !navGateLogged) {
+            navGateLogged = true
+            log("iap2 导航更新：本链路未收到 0x5200 订阅，但车机识别帧声明可收 0x5201——按可收清单放行（旧工程行为）")
+        }
+        return declared
+    }
+
     private fun expect(
         messageId: Int,
         deadline: Long,
@@ -716,7 +924,12 @@ class Iap2SenderSession(
         if (bytes == null) return null
         val frames = parser.offer(bytes)
         if (frames.isEmpty()) return null
-        frames.forEachIndexed { index, frame -> if (index > 0) receivedFrames += frame }
+        frames.forEachIndexed { index, frame ->
+            // 0x5200/0x5203 是全局副作用：订阅可能在握手阶段就到（真车在 0x1D02 之后约 1s 内），
+            // 所以每解析出一帧就观察一次，不依赖它是否正好被某次 expect() 等待。
+            observeRouteGuidance(frame)
+            if (index > 0) receivedFrames += frame
+        }
         return frames.first()
     }
 

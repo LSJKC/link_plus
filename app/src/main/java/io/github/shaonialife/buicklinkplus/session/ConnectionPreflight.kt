@@ -10,7 +10,6 @@ import android.os.Build
 import androidx.core.content.ContextCompat
 import androidx.core.location.LocationManagerCompat
 import io.github.shaonialife.buicklinkplus.bt.TargetDevicePrefs
-import io.github.shaonialife.buicklinkplus.service.CarPlayService
 import io.github.shaonialife.buicklinkplus.util.DeviceIdentity
 
 /** 连接前统一检查，热点凭据在握手后获取 */
@@ -106,10 +105,9 @@ object ConnectionPreflight {
                 Requirement.IDENTITY,
                 DeviceIdentity.cachedBluetoothMac()?.let { it != DeviceIdentity.PLACEHOLDER_MAC } == true,
             )
-        if (requireAudio && !io.github.shaonialife.buicklinkplus.audio.AudioCaptureSupport.available) {
-            checks += Check(Requirement.AUDIO_PERMISSION, granted(context, Manifest.permission.RECORD_AUDIO))
-            checks += Check(Requirement.PROJECTION, CarPlayService.mediaProjection != null)
-        }
+        // CarLife 唯一内容源：音频来自引擎 9240/9241 本地 TCP（AudioSender 外部 PCM），
+        // 视频来自 8240 H.264；两者都不再使用 MediaProjection / 录音采集，因此不再要求
+        // 声音捕获权限与投屏授权（requireAudio 仅为旧采集路径保留参数）。
         return Report(checks)
     }
 

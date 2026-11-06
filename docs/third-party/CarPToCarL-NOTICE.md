@@ -29,7 +29,7 @@
 - 按 link_plus 的 `ScreenSource` / `SessionController` 生命周期接入，保留上游协议报文内容与处理顺序，未改协议语义；
 - 日志与注释按本仓库风格调整（中文、统一日志标签）。
 
-完整移植进度与阶段验收见 [CARLIFE_PORT_PLAN.md](../CARLIFE_PORT_PLAN.md)。
+完整移植进度见 [PORT_MATRIX.md](../PORT_MATRIX.md)，目标与实车测试口径见 [CARLIFE_PORT_PLAN.md](../CARLIFE_PORT_PLAN.md)。
 
 ## 4. 本仓库许可
 

@@ -1186,8 +1186,128 @@ class DisplayPanelFragment : SettingsPanelFragment() {
             }
         }
         refreshScaleNote()
+        addCarLifeCompositionControls(view, ctx)
         // 动态滑条也在首次打开时采用所在显示屏的主题
         io.github.shaonialife.buicklinkplus.ui.AppearanceBindings
             .refresh(view)
+    }
+
+    /** CarLife 合成相关：壁纸背景开关 + 画面圆角开关（写入 CarLifePrefs） */
+    private fun addCarLifeCompositionControls(
+        root: View,
+        ctx: android.content.Context,
+    ) {
+        val body = (root as? android.widget.ScrollView)?.getChildAt(0) as? LinearLayout ?: return
+        val density = resources.displayMetrics.density
+
+        fun switchCard(
+            title: String,
+            hint: String,
+            checked: Boolean,
+            onChange: (Boolean) -> Unit,
+        ) {
+            val card =
+                LinearLayout(ctx).apply {
+                    orientation = LinearLayout.VERTICAL
+                    val pad = (18 * density).toInt()
+                    setPadding(pad, (14 * density).toInt(), pad, (14 * density).toInt())
+                    setAppearanceBackground(if (isPhonePanel) R.drawable.bg_phone_card else R.drawable.bg_card)
+                }
+            card.addView(
+                TextView(ctx).apply {
+                    text = title
+                    textSize = 15f
+                    setAppearanceTextColor(R.color.m3_on_surface)
+                },
+            )
+            card.addView(
+                TextView(ctx).apply {
+                    text = hint
+                    textSize = 12f
+                    setAppearanceTextColor(R.color.m3_on_var)
+                },
+            )
+            val switch =
+                androidx.appcompat.widget.SwitchCompat(ctx).apply {
+                    isChecked = checked
+                    thumbDrawable = androidx.core.content.ContextCompat.getDrawable(ctx, R.drawable.sw_thumb)
+                    trackDrawable = androidx.core.content.ContextCompat.getDrawable(ctx, R.drawable.sw_track)
+                }
+            switch.setOnCheckedChangeListener { _, value -> onChange(value) }
+            card.addView(switch, LinearLayout.LayoutParams(-2, -2))
+            body.addView(card, LinearLayout.LayoutParams(-1, -2).apply { topMargin = (10 * density).toInt() })
+        }
+        switchCard(
+            "壁纸背景",
+            "CarLife 画面合成时使用壁纸背景；关闭后使用纯色底",
+            CarLifePrefs.wallpaperEnabled(ctx),
+        ) { enabled ->
+            CarLifePrefs.setWallpaperEnabled(ctx, enabled)
+            hostToast(if (enabled) "壁纸背景已开启" else "壁纸背景已关闭")
+        }
+        switchCard(
+            "画面圆角",
+            "车机画面四角圆角 ${CarLifePrefs.CORNER_RADIUS_ON}dp；关闭为直角",
+            CarLifePrefs.cornerEnabled(ctx),
+        ) { enabled ->
+            CarLifePrefs.setCornerEnabled(ctx, enabled)
+            hostToast(if (enabled) "画面圆角已开启" else "画面圆角已关闭")
+        }
+
+        // CarLife 合成安全区内收边距（独立于 link_plus 旧的四边逐项安全区）
+        val marginCard =
+            LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                val pad = (18 * density).toInt()
+                setPadding(pad, (14 * density).toInt(), pad, (14 * density).toInt())
+                setAppearanceBackground(if (isPhonePanel) R.drawable.bg_phone_card else R.drawable.bg_card)
+            }
+        marginCard.addView(
+            TextView(ctx).apply {
+                text = "安全区边距（CarLife 合成）"
+                textSize = 15f
+                setAppearanceTextColor(R.color.m3_on_surface)
+            },
+        )
+        marginCard.addView(
+            TextView(ctx).apply {
+                text = "画面四周内收，单位 dp；0=不使用安全区"
+                textSize = 12f
+                setAppearanceTextColor(R.color.m3_on_var)
+            },
+        )
+        val marginValue =
+            TextView(ctx).apply {
+                text = "${CarLifePrefs.safeMargin(ctx)} dp"
+                textSize = 12f
+                setAppearanceTextColor(R.color.m3_on_var)
+            }
+        val marginSeek =
+            SeekBar(ctx).apply {
+                max = CarLifePrefs.SAFE_MARGIN_MAX / 4
+                progress = CarLifePrefs.safeMargin(ctx) / 4
+            }
+        marginSeek.setOnSeekBarChangeListener(
+            object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(
+                    seekBar: SeekBar?,
+                    progress: Int,
+                    fromUser: Boolean,
+                ) {
+                    marginValue.text = "${progress * 4} dp"
+                }
+
+                override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                    val dp = (seekBar?.progress ?: 0) * 4
+                    CarLifePrefs.setSafeMargin(ctx, dp)
+                    hostToast("安全区边距已保存：$dp dp")
+                }
+            },
+        )
+        marginCard.addView(marginSeek, LinearLayout.LayoutParams(-1, -2).apply { topMargin = (6 * density).toInt() })
+        marginCard.addView(marginValue, LinearLayout.LayoutParams(-1, -2))
+        body.addView(marginCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = (10 * density).toInt() })
     }
 }

@@ -2,7 +2,8 @@
 
 > 分支：`carlife-port`  
 > 阶段：P0 基线 + P1A（视频直出）  
-> 前置阅读：[CARLIFE_PORT_PLAN.md](CARLIFE_PORT_PLAN.md)、[P0-baseline.md](P0-baseline.md)、[no-adb-model.md](no-adb-model.md)
+> 前置阅读：[CARLIFE_PORT_PLAN.md](CARLIFE_PORT_PLAN.md)、[P0-baseline.md](P0-baseline.md)、[no-adb-model.md](no-adb-model.md)  
+> **历史记录（2026-11-06）**：本文是 P1A 实现与自测/验收过程的证据记录。当前口径已改为“全面移植 + 实车验证优先、不再逐阶段自测/验收”，功能状态以 [PORT_MATRIX.md](PORT_MATRIX.md) 为准；本文保留供追溯，不再作为阶段门槛文档。
 
 ## 1. 本阶段目标
 

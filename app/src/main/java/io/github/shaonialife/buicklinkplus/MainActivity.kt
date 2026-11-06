@@ -912,7 +912,7 @@ class MainActivity : GlassActivity() {
         // 幂等可重试——启动时不一定已授权（改包名、系统重置后），所以启动和连接等时机都会再试一次。
         ensureNotificationAccessAsync()
 
-        // ---- 车机设置（手机侧二级菜单：桌面/横屏/超采样/dock/默认地图） ----
+        // ---- 旧二级菜单入口：CarLife 版已下线，控件保留但隐藏（设置统一走六类页面） ----
         findViewById<LinearLayout>(R.id.btnCarSettings).setOnClickListener {
             startActivity(android.content.Intent(this, PhoneSettingsActivity::class.java))
         }
@@ -953,13 +953,15 @@ class MainActivity : GlassActivity() {
             PhoneSettingsView(this)
                 .apply {
                     visibility = View.GONE
-                    onSectionRequested = { category ->
-                        val panelId = if (category < 100) category else SettingsMenus.directPhonePanel(category)
-                        if (panelId != null) SettingsContentActivity.start(this@MainActivity, SettingsMenus.itemOf(panelId))
-                        panelId != null
+                    onSectionRequested = { id ->
+                        if (id == SettingsMenus.CONNECTION) {
+                            false
+                        } else {
+                            SettingsContentActivity.start(this@MainActivity, SettingsMenus.itemOf(id))
+                            true
+                        }
                     }
                     onSectionShown = { id ->
-                        if (id == SettingsMenus.ABOUT) renderConsole(SessionController.logText())
                         if (id == SettingsMenus.CONNECTION) refreshConnectionSection()
                         if (id == SettingsMenus.PERMISSIONS) phonePermissions?.refresh()
                     }
@@ -986,44 +988,7 @@ class MainActivity : GlassActivity() {
             target.addView(view, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = (12 * density).toInt() })
         }
 
-        fun panel(
-            body: LinearLayout,
-            id: Int,
-        ) {
-            val item = SettingsMenus.itemOf(id)
-            val row = layoutInflater.inflate(R.layout.item_phone_category, body, false)
-            row.setAppearanceBackground(R.drawable.bg_phone_card)
-            row.findViewById<ImageView>(R.id.categoryIcon).setAppearanceImageResource(item.iconRes)
-            row.findViewById<ImageView>(R.id.categoryIcon).setAppearanceImageTint(R.color.m3_primary)
-            row.findViewById<TextView>(R.id.categoryTitle).text = if (id == SettingsMenus.DOCK) "侧栏样式" else item.title
-            row.setOnClickListener { SettingsContentActivity.start(this@MainActivity, item) }
-            body.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = (10 * density).toInt() })
-        }
-        val appearance = settings.body(SettingsMenus.APPEARANCE)
-        move(findViewById<View>(R.id.btnWallpaperPick).parent as View, appearance)
-        panel(appearance, SettingsMenus.DISPLAY)
-        panel(appearance, SettingsMenus.CAR_APPEARANCE)
-        panel(appearance, SettingsMenus.DOCK)
-        val apps = settings.body(SettingsMenus.APPS)
-        panel(apps, SettingsMenus.DESKTOP)
-        panel(apps, SettingsMenus.SUPERSAMPLE)
-        panel(apps, SettingsMenus.ORIENTATION)
-        panel(apps, SettingsMenus.OFFICIAL_CAR_APPS)
-        // 保留旧控件及监听以兼容现有引用，主列表使用真实面板入口
-        move(findViewById(R.id.btnCarSettings), apps)
-        findViewById<View>(R.id.btnCarSettings).visibility = View.GONE
-        panel(settings.body(SettingsMenus.LAYOUT), SettingsMenus.DISPLAY)
-        panel(settings.body(SettingsMenus.MAP), SettingsMenus.DEFAULT_MAP)
-        val sound = settings.body(SettingsMenus.AUDIO)
-        panel(sound, SettingsMenus.DASHBOARD_WIDGET)
-        move(audioDesc.parent.parent as View, sound)
-        panel(sound, SettingsMenus.AUDIO)
-        soundStatus =
-            TextView(this)
-                .apply {
-                    setAppearanceTextColor(R.color.m3_on_var)
-                    textSize = 13f
-                }.also { sound.addView(it) }
+        // ---- 连接与设备（内嵌页）----
         val connection = settings.body(SettingsMenus.CONNECTION)
         val permissionRow = layoutInflater.inflate(R.layout.item_phone_category, connection, false)
         permissionRow.findViewById<TextView>(R.id.categoryTitle).text = SettingsMenus.titleOf(SettingsMenus.PERMISSIONS)
@@ -1051,37 +1016,7 @@ class MainActivity : GlassActivity() {
                     expanded = false,
                 )
             }
-        val permissions = settings.body(SettingsMenus.PERMISSIONS)
-        // 旧控件仍挂在窗口树内，保留既有授权、状态和息屏保存回调
-        val legacyPermissions = LinearLayout(this).apply { visibility = View.GONE }
-        permissions.addView(legacyPermissions)
-        move(readyCount.parent.parent as View, legacyPermissions)
-        move(switchAlwaysOn.parent.parent as View, legacyPermissions)
-        phonePermissions =
-            PhonePermissionsView(this)
-                .apply {
-                    onAction = ::handlePermissionShortcut
-                    onCompatChanged = { checked ->
-                        switchAlwaysOn.isChecked = checked
-                        refresh()
-                    }
-                }.also { permissions.addView(it, LinearLayout.LayoutParams(-1, -2)) }
-        val about = settings.body(SettingsMenus.ABOUT)
-        move(heroStats, about)
-        move(findViewById(R.id.logCard), about)
-        move(findViewById(R.id.btnDisclaimer), about)
-        homeDashboard =
-            PhoneHomeDashboard(this, detail, onOpen = { id ->
-                val panel = if (id < 100) id else SettingsMenus.directPhonePanel(id)
-                if (panel != null) {
-                    SettingsContentActivity.start(this, SettingsMenus.itemOf(panel))
-                } else {
-                    settingsOpenedFromHome = true
-                    selectPhoneTab(true)
-                    settings.showSection(id)
-                }
-            }, onTarget = ::showTargetPicker)
-        val cellular = layoutInflater.inflate(R.layout.view_phone_cellular, detail, false)
+        val cellular = layoutInflater.inflate(R.layout.view_phone_cellular, connection, false)
         // 新卡片在旧控件初始化之后创建，开关必须在布局加载后读取和绑定
         val switchCellular = cellular.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switchCellular)
         val cellularPreferences = getSharedPreferences("settings", MODE_PRIVATE)
@@ -1093,6 +1028,36 @@ class MainActivity : GlassActivity() {
             log("MODE: 优先使用手机流量 ${if (checked) "开启（上网走手机流量）" else "关闭（上网走车机热点）"}")
         }
         connection.addView(cellular)
+
+        // ---- 权限与后台（内嵌页，从连接与设备进入）----
+        val permissions = settings.body(SettingsMenus.PERMISSIONS)
+        phonePermissions =
+            PhonePermissionsView(this)
+                .apply {
+                    onAction = ::handlePermissionShortcut
+                    onCompatChanged = { checked ->
+                        switchAlwaysOn.isChecked = checked
+                        refresh()
+                    }
+                }.also { permissions.addView(it, LinearLayout.LayoutParams(-1, -2)) }
+
+        // 首页仪表卡：目标车机、快捷入口与状态
+        fun openSection(id: Int) {
+            if (id == SettingsMenus.CONNECTION || id == SettingsMenus.PERMISSIONS) {
+                settingsOpenedFromHome = true
+                selectPhoneTab(true)
+                settings.showSection(id)
+            } else {
+                SettingsContentActivity.start(this, SettingsMenus.itemOf(id))
+            }
+        }
+        homeDashboard =
+            PhoneHomeDashboard(
+                this,
+                detail,
+                onOpen = ::openSection,
+                onTarget = ::showTargetPicker,
+            )
         move(findViewById(R.id.homeSessionNote), detail)
         (findViewById<View>(R.id.homeSessionNote).layoutParams as LinearLayout.LayoutParams).topMargin = (12 * density).toInt()
         findViewById<View>(R.id.phoneHomeTab).setOnClickListener {
@@ -1104,9 +1069,10 @@ class MainActivity : GlassActivity() {
             if (phoneSettingsVisible) settings.showIndex()
             selectPhoneTab(true)
         }
+        // link_plus 原桌面/车机设置入口已下线，旧控件保留但不再显示
+        findViewById<View>(R.id.btnCarSettings).visibility = View.GONE
         findViewById<View>(R.id.heroStats).visibility = View.GONE
     }
-
     /**
      * 底部导航只调整页面可见性，连接与授权状态继续由原宿主管理
      */

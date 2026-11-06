@@ -1,16 +1,22 @@
 # Buick Link +
 
-把手机 CarLife+ 的画面和声音投到无线 CarPlay 车机，再用车机触屏操作 CarLife。手机无需 root，也不需要开发者选项、无线调试或 ADB；最低支持 Android 12。
+把手机 CarLife+ 的画面、声音和触摸通过无线 CarPlay 投到车机：手机无需 root，也不需要开发者选项、无线调试或 ADB；最低支持 Android 12。
 
-手机端可以查看连接状态、调整设置；内容源为手机 CarLife+。原版依赖内置 ADB/shell 的隐形屏桌面、应用启动与触摸注入能力已移除，详见 [无 ADB 模型](docs/no-adb-model.md)。项目不附带第三方 APK。
+当前目标（2026-11-06 起）：把 hybrid63 插桩版已验证的 CarLife 功能**全面移植为可维护源码**（视频、合成壁纸/安全区、音频/TTS、触摸、导航、媒体、HUD、语音键、GPS、MAC 身份、诊断、壁纸、设置页），去掉内置无线 ADB 激活，瘦身 APK，并出实车测试包。功能进度见 [功能移植矩阵](docs/PORT_MATRIX.md)，目标与实车测试清单见 [CarLife 重构计划](docs/CARLIFE_PORT_PLAN.md)。
 
 ![手机界面](docs/images/phone-ui-overview.png)
 
 ## 开始使用
 
-无需开发者选项、无线调试或 ADB：安装后授予普通权限并连接车机，画面来自手机 CarLife+（需先在手机上打开 CarLife+ 的无线连接）。无需另装 Shizuku。录音、通知和定位权限会在使用对应功能时申请。
+无需开发者选项、无线调试或 ADB：安装后授予普通权限（蓝牙、附近 Wi-Fi、通知等，按需申请）并连接车机；画面来自手机 CarLife+，需先在手机上打开 CarLife+ 并进入「无线连接」。无需另装 Shizuku。权限与链路说明见 [无 ADB 模型与权限](docs/no-adb-model.md)。
 
 车型和系统版本会影响连接效果。目前 Android 17 息屏后保持连接仍有问题，欢迎反馈具体机型和日志。驾驶时请勿操作手机。
+
+## 实车测试包与反馈
+
+- 测试包：buick 变体 APK（`app/build/outputs/apk/buick/app-buick.apk`），版本号与 SHA-256 随发布说明提供；
+- 反馈日志：应用内「设置 → 帮助与诊断 → 导出日志文件」导出完整日志，附上手机/车机型号、系统版本、应用版本、复现步骤；
+- 开发调试：`scripts/p1a-field-check.ps1` 可抓取并校验 CarLife 链路日志（`scripts/verify-carlife-log.ps1` 单独校验已有日志）。
 
 ## 构建
 
@@ -23,8 +29,13 @@
 
 APK 位于 `app/build/outputs/apk/buick/app-buick.apk`，测试包使用 `.buick` 后缀。正式签名通过 `keystore.properties` 配置，可参考同名示例文件；缺少配置时使用本机测试签名。不同签名的安装包不能直接覆盖安装。
 
-- [项目结构](docs/architecture.md)
+## 文档
+
+- [功能移植矩阵](docs/PORT_MATRIX.md)
+- [CarLife 重构目标与计划](docs/CARLIFE_PORT_PLAN.md)
 - [无 ADB 模型与权限](docs/no-adb-model.md)
+- [GitHub 下游同步流程](docs/GITHUB_WORKFLOW.md)
+- [项目结构](docs/architecture.md)
 - [第三方组件与许可](docs/dependencies.md)
 - [English](README.en.md)
 

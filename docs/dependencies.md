@@ -7,14 +7,13 @@
 | Kotlin stdlib | 2.3.21 | Apache-2.0 |
 | AndroidX core-ktx / AppCompat | 1.13.1 / 1.7.0 | Apache-2.0 |
 | ViewPager2 / RecyclerView | 1.1.0 / 1.3.2 | Apache-2.0 |
-| Bouncy Castle bcprov / bcpkix | 1.81.1 | MIT |
-| Conscrypt Android | 2.8.0 | Apache-2.0，附 NOTICE 与 BoringSSL 许可 |
+| Bouncy Castle bcprov | 1.81.1 | MIT |
 | Ant Design Icons outlined | 7f2516ac91226d2b41f93b35cb5197c8d94f7189 | MIT |
 | JUnit | 4.13.2 | EPL-1.0，仅测试 |
 | org.json / MockWebServer | 20240303 / 4.12.0 | JSON / Apache-2.0，仅测试 |
 | AndroidX test runner | 1.6.2 | Apache-2.0，仅测试 |
 
-AndroidX 传递模块、Kotlin coroutines 1.6.4、JetBrains annotations 13.0 和 Guava listenablefuture 1.0 使用 Apache-2.0。AGP、Gradle、Kotlin、Spotless 和 ktlint 的许可随各自分发包提供。
+AndroidX 传递模块、Kotlin coroutines 1.6.4、JetBrains annotations 13.0 和 Guava listenablefuture 1.0 使用 Apache-2.0。AGP、Gradle、Kotlin、Spotless 和 ktlint 的许可随各自分发包提供。APK 默认只打包 arm64-v8a / armeabi-v7a 两种 ABI（见 `app/build.gradle.kts`），未使用依赖 `conscrypt-android` 与 `bcpkix-jdk18on` 已移除以缩小安装包。
 
 APK 内的声明见 [embedded-third-party-notices.txt](../app/src/main/assets/embedded-third-party-notices.txt)。图标来自 [Ant Design Icons](https://github.com/ant-design/ant-design-icons)，原始 SVG 和许可在 [third-party/ant-design-icons](third-party/ant-design-icons/)，资源映射见 [icon-sources.json](icon-sources.json)。
 

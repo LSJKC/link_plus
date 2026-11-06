@@ -1,5 +1,7 @@
 # P1A 第三轮对抗性审计（CarLife H.264 → 编码器 Surface 直出）
 
+> **历史记录**：本文是 P1A 阶段的审计证据，保留供追溯；当前口径为“全面移植 + 实车验证优先、不再逐阶段自测/验收”，功能状态见 [../PORT_MATRIX.md](../PORT_MATRIX.md)。
+
 > 审计对象：`F:\carplay\_newproj\linkplus_carlife`，分支 `carlife-port`。
 >
 > **审计快照：`df3e852`**（任务给定的是 `2beb13f`；审计期间上游合入了

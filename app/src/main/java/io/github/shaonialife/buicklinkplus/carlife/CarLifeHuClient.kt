@@ -187,6 +187,14 @@ class CarLifeHuClient(
      * 打开后只保留「控制端口未连通」汇总行。只影响日志，返回值/握手/生命周期完全不变。
      */
     private val quietPortFailures: Boolean = false,
+    /**
+     * CarLife `0x10030 NAVI_NEXT_TURN` 回调（手机 CarLife 内置导航的转向/距离信息）。
+     *
+     * 只有 CarLife 内置导航运行、且引擎主动推 `0x10030` 时才会触发；解析失败只记日志不回调。
+     * 高德等外部导航不走这条（`0x10030` 只对内置百度导航有效），由可选的 [CarLifeNavAmap]
+     * 结构化数据源补上，两者最终都汇到 [CarLifeNav] 编 iAP2 `0x5201/0x5202`。
+     */
+    private val onNaviTurn: (CarLifeNav.NextTurn) -> Unit = {},
 ) {
     private val running = AtomicBoolean(false)
     private val sockets = ConcurrentHashMap<Int, Socket>()
@@ -202,6 +210,9 @@ class CarLifeHuClient(
      */
     private val progressLog = LogThrottle(10_000L)
     private val emptyMediaLog = LogThrottle(5_000L)
+
+    /** 0x10030/0x1003B 诊断日志限流（导航运行中引擎约 1Hz 推送，未解析时避免刷屏）。 */
+    private val naviLog = LogThrottle(10_000L)
 
     /** 命令帧写锁：心跳线程、握手线程与视频看门狗会并发下发，必须串行写同一条 socket。 */
     private val writeLock = Any()
@@ -885,6 +896,39 @@ class CarLifeHuClient(
                     }
                 if (progressLog.allow("media-progress")) {
                     log("CARLIFE: 媒体进度 ${progress}ms（同类提示 10 秒最多一行）")
+                }
+            }
+
+            0x10030 -> {
+                // MSG_CMD_NAVI_NEXT_TURN_INFO：CarLife 手机内置导航的转向 HUD（旧工程
+                // com.turtlelink.carlife.CarLifeHuClient 65584 分支）。
+                // protobuf：1 action、2 nextTurn、3 roadName、4 total、5 remain（字段 6 icon 不用）。
+                val nextTurn = CarLifeNav.parseNextTurn(payload)
+                if (nextTurn == null) {
+                    // 解析失败多半是字段布局差异，带原始 hex 的限流日志足够现场定位。
+                    if (naviLog.allow("navi-next-turn-unparsed")) {
+                        log(
+                            "CARLIFE: NAVI_NEXT_TURN 0x10030 解析失败（${payload.size}B）" +
+                                " hex=${CarLifeNav.hex(payload).take(192)}（同类提示 10 秒最多一行）",
+                        )
+                    }
+                } else {
+                    log(
+                        "CARLIFE: NAVI_NEXT_TURN 0x10030 action=${nextTurn.action} " +
+                            "turn=${nextTurn.nextTurn} road=${nextTurn.road} " +
+                            "total=${nextTurn.totalDistanceMeters} remain=${nextTurn.remainDistanceMeters}",
+                    )
+                    onNaviTurn(nextTurn)
+                }
+            }
+
+            0x1003B -> {
+                // MSG_CMD_NAVI_INFO：导航链路的辅助信息，旧工程也只记日志、不参与 HUD。
+                if (naviLog.allow("navi-info")) {
+                    log(
+                        "CARLIFE: NAVI_INFO 0x1003B ${payload.size}B " +
+                            "hex=${CarLifeNav.hex(payload).take(128)}（同类提示 10 秒最多一行）",
+                    )
                 }
             }
 
