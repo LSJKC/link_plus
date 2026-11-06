@@ -48,6 +48,7 @@ import io.github.shaonialife.buicklinkplus.service.CarPlayService
 import io.github.shaonialife.buicklinkplus.session.ConnectionPreflight
 import io.github.shaonialife.buicklinkplus.session.SessionCommands
 import io.github.shaonialife.buicklinkplus.session.SessionController
+import io.github.shaonialife.buicklinkplus.ui.BuiltinWallpapers
 import io.github.shaonialife.buicklinkplus.ui.DarkMessageDialog
 import io.github.shaonialife.buicklinkplus.ui.GlassActivity
 import io.github.shaonialife.buicklinkplus.ui.PanelWindow
@@ -261,7 +262,7 @@ class MainActivity : GlassActivity() {
 
     /** 连接前选择车机侧是否播放声音：CarLife 音源默认无需授权；兼容模式需投屏授权（录屏采集）。 */
     private fun showAudioChoiceDialog() {
-        val saved = getSharedPreferences("settings", Context.MODE_PRIVATE).getBoolean("carlife_audio_enabled", true)
+        val saved = CarLifePrefs.audioEnabled(this)
         val compatibility =
             io.github.shaonialife.buicklinkplus.audio.AudioPreference
                 .read(this) ==
@@ -307,8 +308,9 @@ class MainActivity : GlassActivity() {
                 .setView(content)
                 .setPositiveButton("开始连接") { _, _ ->
                     val enabled = switch.isChecked
+                    CarLifePrefs.setAudioEnabled(this, enabled)
                     getSharedPreferences("settings", Context.MODE_PRIVATE)
-                        .edit { putBoolean("carlife_audio_enabled", enabled) }
+                        .edit { putBoolean("carlife_audio_prompted", true) }
                     beginWithAudio(enabled)
                 }.setNegativeButton("取消", null)
                 .create()
@@ -540,7 +542,15 @@ class MainActivity : GlassActivity() {
     private fun beginConnectionPreparation() {
         if (isFinishing || isDestroyed || connectionCheckRunning || SessionController.isSessionRunning()) return
         warnIfBluetoothMacUnresolved()
-        ensureBluetoothReady { showAudioChoiceDialog() }
+        ensureBluetoothReady {
+            // 首次连接才弹「车机侧播放声音」，之后按已保存选择直接开始（用户可在 CarLife 页改）
+            val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+            if (!prefs.getBoolean("carlife_audio_prompted", false)) {
+                showAudioChoiceDialog()
+            } else {
+                beginWithAudio(prefs.getBoolean("carlife_audio_enabled", CarLifePrefs.audioEnabled(this)))
+            }
+        }
     }
 
     /**
@@ -896,6 +906,97 @@ class MainActivity : GlassActivity() {
         log("测试台：两台手机蓝牙配对 -> 备用机跑 xcertplay 无线模式 -> 点「启动连接」等待回连")
     }
 
+    /** 「外观与壁纸」页的 10 张内置壁纸网格：点选即应用，当前项用 ✓ 标识。 */
+    private fun buildBuiltinWallpaperGrid(parent: LinearLayout) {
+        val density = resources.displayMetrics.density
+        val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+        parent.addView(
+            TextView(this).apply {
+                text = "内置壁纸"
+                textSize = 16f
+                paint.isFakeBoldText = true
+                setAppearanceTextColor(R.color.m3_on_surface)
+                setPadding(0, (4 * density).toInt(), 0, (8 * density).toInt())
+            },
+        )
+        val cells = mutableListOf<Pair<ImageView, TextView>>()
+        val appContext = applicationContext
+        var index = 0
+        BuiltinWallpapers.TITLES.chunked(3).forEach { titles ->
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            titles.forEachIndexed { position, title ->
+                val itemIndex = index++
+                val cell =
+                    LinearLayout(this).apply {
+                        orientation = LinearLayout.VERTICAL
+                        gravity = android.view.Gravity.CENTER_HORIZONTAL
+                        val pad = (4 * density).toInt()
+                        setPadding(pad, pad, pad, (6 * density).toInt())
+                        setAppearanceBackground(R.drawable.bg_phone_card)
+                        isFocusable = true
+                        setOnClickListener {
+                            BuiltinWallpapers.applyAsync(appContext, itemIndex) { err ->
+                                if (isFinishing || isDestroyed) return@applyAsync
+                                if (err != null) {
+                                    snack("应用壁纸失败：$err")
+                                } else {
+                                    prefs.edit { putInt("builtin_wallpaper_index", itemIndex) }
+                                    highlightBuiltinWallpaperCells(cells)
+                                    snack("已应用壁纸：${BuiltinWallpapers.TITLES[itemIndex]}")
+                                }
+                            }
+                        }
+                    }
+                val image =
+                    ImageView(this).apply {
+                        scaleType = ImageView.ScaleType.CENTER_CROP
+                        contentDescription = title
+                    }
+                val label =
+                    TextView(this).apply {
+                        text = title
+                        textSize = 11f
+                        gravity = android.view.Gravity.CENTER
+                        setAppearanceTextColor(R.color.m3_on_var)
+                    }
+                cell.addView(image, LinearLayout.LayoutParams(-1, (64 * density).toInt()))
+                cell.addView(label)
+                cells += image to label
+                row.addView(
+                    cell,
+                    LinearLayout.LayoutParams(0, -2, 1f).apply {
+                        if (position < titles.lastIndex) marginEnd = (8 * density).toInt()
+                    },
+                )
+            }
+            parent.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = (8 * density).toInt() })
+        }
+        Bg.run("builtin-wallpaper-thumbs") {
+            val thumbs = cells.indices.map { i -> runCatching { BuiltinWallpapers.loadThumb(appContext, i, 240) }.getOrNull() }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                cells.forEachIndexed { i, pair ->
+                    thumbs.getOrNull(i)?.let { bitmap ->
+                        if (!bitmap.isRecycled) pair.first.setImageBitmap(bitmap)
+                    }
+                }
+                highlightBuiltinWallpaperCells(cells)
+            }
+        }
+    }
+
+    /** 内置壁纸网格当前项标识（✓ + 主题色）。 */
+    private fun highlightBuiltinWallpaperCells(cells: List<Pair<ImageView, TextView>>) {
+        val current = getSharedPreferences("settings", Context.MODE_PRIVATE).getInt("builtin_wallpaper_index", -1)
+        cells.forEachIndexed { i, (image, label) ->
+            val title = BuiltinWallpapers.TITLES.getOrNull(i) ?: return@forEachIndexed
+            val selected = i == current
+            label.text = if (selected) "✓ $title" else title
+            label.setAppearanceTextColor(if (selected) R.color.m3_primary else R.color.m3_on_var)
+            image.alpha = if (selected) 1f else 0.9f
+        }
+    }
+
     /** 设置 → CarLife：简洁状态页（引擎/端口自检、无线连接提示、重连、日志诊断）。 */
     private fun buildCarLifePage(body: LinearLayout) {
         val density = resources.displayMetrics.density
@@ -1043,6 +1144,12 @@ class MainActivity : GlassActivity() {
         switchRow("车机 GPS 转发", "手机定位回填给 CarLife", CarLifeGpsBridge.isEnabled(this)) { enabled ->
             CarLifeGpsBridge.setEnabled(appContext, enabled)
             snack(if (enabled) "车机 GPS 转发已开启" else "车机 GPS 转发已关闭")
+        }
+        switchRow("车机侧播放声音（CarLife 音源）", "关闭则只传画面；兼容模式连接时需投屏授权", CarLifePrefs.audioEnabled(this)) { enabled ->
+            CarLifePrefs.setAudioEnabled(appContext, enabled)
+            // 设置页改过选择后，下次连接不再弹首次提示
+            getSharedPreferences("settings", Context.MODE_PRIVATE).edit { putBoolean("carlife_audio_prompted", true) }
+            snack(if (enabled) "车机侧声音已开启" else "车机侧声音已关闭")
         }
         refreshStatus()
     }
@@ -1240,7 +1347,10 @@ class MainActivity : GlassActivity() {
             body.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = (10 * density).toInt() })
         }
         val appearance = settings.body(SettingsMenus.APPEARANCE)
-        // 原版「车机显示」卡整卡（含壁纸入口）放进「外观与壁纸」页，首页不再显示空卡\n        move(findViewById<View>(R.id.btnWallpaperPick).parent.parent as View, appearance)
+        // 内置壁纸网格（点选即应用，保留原版选择图片/校准/恢复默认入口）
+        buildBuiltinWallpaperGrid(appearance)
+        // 原版「车机显示」卡整卡（含壁纸入口）放进「外观与壁纸」页，首页不再显示空卡
+        move(findViewById<View>(R.id.btnWallpaperPick).parent.parent as View, appearance)
         panel(appearance, SettingsMenus.CAR_APPEARANCE)
         // 原版「桌面应用/超采样/横屏/侧栏/地图分屏」入口已下线：页面容器保留，但不再显示入口
         findViewById<View>(R.id.btnCarSettings).visibility = View.GONE
@@ -1342,7 +1452,9 @@ class MainActivity : GlassActivity() {
                     selectPhoneTab(true)
                     settings.showSection(id)
                 }
-            }, onTarget = ::showTargetPicker, onMac = ::showBluetoothMacDialog)
+            }, onTarget = ::showTargetPicker, onMac = ::showBluetoothMacDialog, onWallpaper = {
+                startActivity(Intent(this@MainActivity, WallpaperActivity::class.java))
+            })
         val cellular = layoutInflater.inflate(R.layout.view_phone_cellular, detail, false)
         // 新卡片在旧控件初始化之后创建，开关必须在布局加载后读取和绑定
         val switchCellular = cellular.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switchCellular)

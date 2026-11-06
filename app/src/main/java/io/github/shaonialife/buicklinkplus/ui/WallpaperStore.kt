@@ -233,6 +233,65 @@ object WallpaperStore {
     /** 清除壁纸并重置画面位置 */
     fun resetToDefault(context: Context): Boolean = save(context, null, true, WallpaperCalibration())
 
+    /**
+     * 写入一张现成位图（内置壁纸用），沿用 [save] 的落盘/提交/清理顺序：
+     * 压缩为 JPEG → 一次提交图片引用与居中校准 → 删除旧图 → 通知一次变更。
+     *
+     * 调用方在后台线程调用；成功后与原版"选择图片"等价（[resetToDefault] 可清除）。
+     */
+    @android.annotation.SuppressLint("UseKtx", "ApplySharedPref")
+    @Synchronized
+    fun saveBitmap(
+        context: Context,
+        bitmap: Bitmap,
+    ): Boolean {
+        if (bitmap.width <= 0 || bitmap.height <= 0 || bitmap.isRecycled) return false
+        val prefs = context.getSharedPreferences("wallpaper_calibration", Context.MODE_PRIVATE)
+        val previous = userWallpaperFile(context)
+        val previousImage = prefs.getString("image", USER_FILE)
+        val previousValue = calibration(context)
+        var pending: File? = null
+        var committing = false
+        return try {
+            val destination = File(context.filesDir, "wallpaper-${java.util.UUID.randomUUID()}.jpg")
+            pending = destination
+            java.io.FileOutputStream(destination).use { output ->
+                check(bitmap.compress(Bitmap.CompressFormat.JPEG, 92, output)) { "壁纸压缩失败" }
+                output.fd.sync()
+            }
+            val normalized = WallpaperCalibration()
+            committing = true
+            check(
+                prefs
+                    .edit()
+                    .putString("image", destination.name)
+                    .putInt("zoom", normalized.zoomPercent)
+                    .putInt("x", normalized.xPermille)
+                    .putInt("y", normalized.yPermille)
+                    .commit(),
+            ) { "无法保存壁纸配置" }
+            // 新配置已落盘，旧图片不再被配置引用后才清理
+            if (previous != null && previous.name != destination.name) previous.delete()
+            markChanged()
+            true
+        } catch (_: Exception) {
+            if (committing) {
+                // commit 失败仍可能修改内存值，恢复原引用后才能删除未提交图片
+                runCatching {
+                    prefs
+                        .edit()
+                        .putString("image", previousImage)
+                        .putInt("zoom", previousValue.zoomPercent)
+                        .putInt("x", previousValue.xPermille)
+                        .putInt("y", previousValue.yPermille)
+                        .commit()
+                }
+            }
+            pending?.delete()
+            false
+        }
+    }
+
     // ---- 桌面切片：全流画布的 aspectFill 位图（GridActivity/DockActivity 共用） ----
 
     /**

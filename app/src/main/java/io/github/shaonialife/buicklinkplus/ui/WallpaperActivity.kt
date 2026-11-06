@@ -311,6 +311,26 @@ class WallpaperActivity : GlassActivity() {
     }
 
     /**
+     * 内置壁纸/其它入口应用壁纸后，若编辑器当前显示的是“已保存壁纸”（没有未保存草稿）
+     * 则立即刷新预览；有草稿（选了新图/恢复默认）时不覆盖用户操作。
+     */
+    private val wallpaperVersionListener: (Long) -> Unit = {
+        if (!saving && selectedUri == null && !defaultImage && ::preview.isInitialized) {
+            loadPreview()
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        WallpaperStore.addListener(wallpaperVersionListener)
+    }
+
+    override fun onStop() {
+        WallpaperStore.removeListener(wallpaperVersionListener)
+        super.onStop()
+    }
+
+    /**
      * 按正式画布的宽高比显示草稿，保留缩小和偏移后的背景区域
      */
     private inner class Preview : View(this@WallpaperActivity) {

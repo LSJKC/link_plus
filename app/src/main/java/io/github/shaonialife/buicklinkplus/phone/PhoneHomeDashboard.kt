@@ -20,6 +20,7 @@ import io.github.shaonialife.buicklinkplus.media.WeatherState
 import io.github.shaonialife.buicklinkplus.session.ConnectionPreflight
 import io.github.shaonialife.buicklinkplus.session.SessionController
 import io.github.shaonialife.buicklinkplus.ui.CarAppearancePrefs
+import io.github.shaonialife.buicklinkplus.ui.WallpaperStore
 import io.github.shaonialife.buicklinkplus.ui.setAppearanceBackground
 import io.github.shaonialife.buicklinkplus.ui.setAppearanceImageResource
 import io.github.shaonialife.buicklinkplus.ui.setAppearanceImageTint
@@ -33,6 +34,7 @@ class PhoneHomeDashboard(
     private val onOpen: (Int) -> Unit,
     onTarget: () -> Unit,
     onMac: () -> Unit,
+    onWallpaper: () -> Unit,
 ) {
     private val density = context.resources.displayMetrics.density
     private val preparation: TextView
@@ -43,12 +45,15 @@ class PhoneHomeDashboard(
     private val target: TextView
     private val carLife: TextView
     private val mac: TextView
+    private val wallpaper: TextView
 
     init {
         parent.setPadding(0, dp(12), 0, 0)
-        target = row(parent, "目标车辆", R.drawable.ic_car, onTarget)
+        // 用户指定顺序：CarLife → 本机蓝牙 MAC → 目标车辆 → 壁纸
         carLife = row(parent, "CarLife", R.drawable.ic_screen_rotation) { onOpen(SettingsMenus.CARLIFE) }
         mac = row(parent, "本机蓝牙 MAC", R.drawable.ic_bluetooth) { onMac() }
+        target = row(parent, "目标车辆", R.drawable.ic_car, onTarget)
+        wallpaper = row(parent, "壁纸", R.drawable.ic_wallpaper, onWallpaper)
         heading(parent, R.string.home_prepare)
         preparation = row(parent, "基础环境", R.drawable.ic_app_settings) { onOpen(SettingsMenus.PERMISSIONS) }
         heading(parent, R.string.home_shortcuts)
@@ -131,6 +136,13 @@ class PhoneHomeDashboard(
                 overrideMac != null -> "已手填 $overrideMac"
                 resolvedMac != null -> "自动解析 $resolvedMac"
                 else -> "未解析（占位 ${DeviceIdentity.PLACEHOLDER_MAC}），车机可能不邀请；点此手填"
+            }
+        val hasWallpaper = WallpaperStore.userWallpaperFile(context) != null
+        wallpaper.text =
+            if (hasWallpaper) {
+                "已设置壁纸 · 点此打开壁纸编辑器（内置壁纸 / 自定义图片 / 校准）"
+            } else {
+                "默认背景 · 点此选择内置壁纸或自定义图片"
             }
         val report = ConnectionPreflight.inspect(context, SessionController.audioEnabledForSession).beforeIdentity()
         val ready = report.checks.count { it.ready }
